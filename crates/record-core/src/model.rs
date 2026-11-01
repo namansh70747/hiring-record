@@ -52,6 +52,9 @@ pub struct Assessment {
     pub criterion: String,
     pub met: bool,
     pub citation: Option<String>,
+    /// Unknown is not a recorded “not met”. Omitted on legacy assessments.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub unknown: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, utoipa::ToSchema)]
@@ -96,6 +99,67 @@ pub struct Receipt {
     pub id: String,
     pub label: String,
     pub acknowledged: bool,
+    /// Zero means the legacy single-acknowledgement receipt.
+    #[serde(default, skip_serializing_if = "is_zero_u32")]
+    pub expected_acks: u32,
+    #[serde(default, skip_serializing_if = "is_zero_u32")]
+    pub observed_acks: u32,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub acknowledgement_ids: Vec<String>,
+}
+
+impl Receipt {
+    pub fn pending(id: impl Into<String>, label: impl Into<String>) -> Self {
+        Self {
+            id: id.into(),
+            label: label.into(),
+            acknowledged: false,
+            expected_acks: 0,
+            observed_acks: 0,
+            acknowledgement_ids: vec![],
+        }
+    }
+
+    pub fn expected(&self) -> u32 {
+        if self.expected_acks == 0 {
+            1
+        } else {
+            self.expected_acks
+        }
+    }
+
+    pub fn observed(&self) -> u32 {
+        if self.acknowledged {
+            self.expected()
+        } else {
+            self.observed_acks
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, utoipa::ToSchema)]
+pub struct Hold {
+    pub id: String,
+    pub label: String,
+    pub status: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, utoipa::ToSchema, Default)]
+pub struct EventEnvelope {
+    pub schema_version: u32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub recorded_at: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub actor: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub command_id: Option<String>,
+}
+
+fn is_false(value: &bool) -> bool {
+    !*value
+}
+fn is_zero_u32(value: &u32) -> bool {
+    *value == 0
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, utoipa::ToSchema)]
@@ -148,12 +212,26 @@ pub struct State {
     pub overrides: Vec<DecisionOverride>,
     #[serde(default)]
     pub quotes: Vec<Quote>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub holds: Vec<Hold>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub removed_supporters: Vec<String>,
+    /// Blake3 of the immutable replay baseline. Empty until the baseline is sealed.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub baseline_digest: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub baseline_schema: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub rules_version: String,
+    /// Exact baseline state, without a nested copy of itself, used for replay.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub opening_json: String,
 }
 
 impl State {
     /// Starting point for a new synthetic role; opening it is itself an event.
     pub fn empty() -> Self {
-        Self {
+        let mut state = Self {
             role_id: String::new(),
             active: StandardVersion {
                 id: String::new(),
@@ -177,7 +255,15 @@ impl State {
             facts: vec![],
             overrides: vec![],
             quotes: vec![],
-        }
+            holds: vec![],
+            removed_supporters: vec![],
+            baseline_digest: String::new(),
+            baseline_schema: String::new(),
+            rules_version: String::new(),
+            opening_json: String::new(),
+        };
+        crate::seal_opening(&mut state);
+        state
     }
     pub fn is_stale(&self, assessment: &Assessment) -> bool {
         assessment.version != self.active.id
@@ -234,6 +320,19 @@ pub enum Command {
     DeclineQuote {
         quote_id: String,
     },
+    /// Source and assessment commit together. A retry cannot create a second source.
+    RecordSourceAndAssessment {
+        source: SourceMoment,
+        assessment: Assessment,
+    },
+    RemoveSupporter {
+        supporter_id: String,
+    },
+    /// One observed acknowledgement. Duplicates of the same id are rejected without a new effect.
+    RecordAcknowledgement {
+        receipt_id: String,
+        acknowledgement_id: String,
+    },
     Dismiss {
         proposal_id: String,
     },
@@ -279,6 +378,9 @@ pub struct Event {
     pub payload: String,
     pub prev_hash: String,
     pub hash: String,
+    /// Provenance is outside the v1 hash. Legacy events omit it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub envelope: Option<EventEnvelope>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
@@ -364,6 +466,14 @@ pub struct ClaimLine {
     pub eligible: bool,
     pub refusal: Option<RefusalCode>,
     pub reason: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub all_refusals: Vec<RefusalCode>,
+    #[serde(default, skip_serializing_if = "is_zero_usize")]
+    pub unknown_count: usize,
+}
+
+fn is_zero_usize(value: &usize) -> bool {
+    *value == 0
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, utoipa::ToSchema)]

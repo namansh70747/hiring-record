@@ -17,8 +17,8 @@ use axum::{
     Json, Router,
 };
 use record_core::{
-    apply, decide, evaluate_report, load_fixture, state_from_fixture, Command, ProposalStatus,
-    Report, State as RoleState,
+    attach_provenance, create_replay_bundle, decide, evaluate_report, load_fixture,
+    state_from_fixture, Command, ProposalStatus, Report, State as RoleState,
 };
 use serde::Deserialize;
 use tokio::net::TcpListener;
@@ -42,6 +42,7 @@ struct AppState {
     results: Arc<Mutex<RequestResults>>,
     request_limits: Arc<Mutex<HashMap<String, (u64, u32)>>>,
     workflow_enabled: bool,
+    seals: Arc<Mutex<HashMap<String, serde_json::Value>>>,
 }
 
 impl Default for AppState {
@@ -64,6 +65,7 @@ impl Default for AppState {
             public_origin: "http://127.0.0.1:8080".into(),
             request_limits: Arc::new(Mutex::new(HashMap::new())),
             workflow_enabled: false,
+            seals: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 }
@@ -200,6 +202,16 @@ fn router(state: AppState) -> Router {
         .route("/v1/roles/{role_id}/report", get(role_report))
         .route("/v1/roles/{role_id}/bundle", get(role_bundle))
         .route("/v1/roles/{role_id}/commands", post(command))
+        .route("/v1/roles/{role_id}/stream", get(role_stream))
+        .route("/v1/roles/{role_id}/compare", get(role_compare))
+        .route("/v1/roles/{role_id}/reports", post(seal_report))
+        .route("/v1/roles/{role_id}/reports/{seal_id}", get(sealed_report))
+        .route(
+            "/v1/roles/{role_id}/reports/{seal_id}/bundle",
+            get(sealed_bundle),
+        )
+        .route("/v1/session", get(session_status))
+        .route("/v1/signing-keys", get(signing_keys))
         .route("/health", get(|| async { "ok" }))
         .route("/ready", get(connection_check))
         .route("/v1/session/new", post(new_session))
@@ -261,6 +273,44 @@ async fn stream(
     headers: HeaderMap,
 ) -> Result<impl axum::response::IntoResponse, StatusCode> {
     let id = session(&headers)?;
+    snapshot_stream(app, headers, id).await
+}
+
+async fn role_compare(
+    State(app): State<AppState>,
+    Path(role_id): Path<String>,
+    headers: HeaderMap,
+) -> Result<Json<record_core::Comparison>, StatusCode> {
+    let id = existing_role_stream(&app, &session(&headers)?, &role_id).await?;
+    let (_, state) = app.read_scenario(&id).await?;
+    let initial = if role_id == "sept" {
+        fresh()
+    } else {
+        serde_json::from_str(&state.opening_json).map_err(|_| StatusCode::CONFLICT)?
+    };
+    let before = state.events.len();
+    let comparison =
+        record_core::compare_other_path(&initial, &state).map_err(|_| StatusCode::CONFLICT)?;
+    if state.events.len() != before {
+        return Err(StatusCode::CONFLICT);
+    }
+    Ok(Json(comparison))
+}
+
+async fn role_stream(
+    State(app): State<AppState>,
+    Path(role_id): Path<String>,
+    headers: HeaderMap,
+) -> Result<impl axum::response::IntoResponse, StatusCode> {
+    let id = existing_role_stream(&app, &session(&headers)?, &role_id).await?;
+    snapshot_stream(app, headers, id).await
+}
+
+async fn snapshot_stream(
+    app: AppState,
+    headers: HeaderMap,
+    id: String,
+) -> Result<impl axum::response::IntoResponse, StatusCode> {
     let permit = app
         .streams
         .clone()
@@ -860,7 +910,12 @@ async fn mutate_stream(
             }
             return Err(StatusCode::CONFLICT);
         }
-        let event = decide(&state, command).map_err(|_| StatusCode::CONFLICT)?;
+        let mut event = decide(&state, command).map_err(|_| StatusCode::CONFLICT)?;
+        attach_provenance(
+            &mut event,
+            Some(security::utc_now()),
+            Some("synthetic-session".into()),
+        );
         record_core::evolve(&mut state, event.clone());
         let response = versioned_snapshot(&state, state.events.len(), generation);
         store
@@ -885,11 +940,129 @@ async fn mutate_stream(
         if expected != format!("{generation}:{}", state.events.len()) {
             return Err(StatusCode::CONFLICT);
         }
-        apply(state, command).map_err(|_| StatusCode::CONFLICT)?;
+        let mut event = decide(state, command).map_err(|_| StatusCode::CONFLICT)?;
+        attach_provenance(
+            &mut event,
+            Some(security::utc_now()),
+            Some("synthetic-session".into()),
+        );
+        record_core::evolve(state, event);
         let response = versioned_snapshot(state, state.events.len(), *generation);
         results.insert((id, key.into()), (fingerprint, response.clone()));
         Ok(Json(response))
     }
+}
+
+async fn session_status(headers: HeaderMap) -> Result<Json<serde_json::Value>, StatusCode> {
+    let id = session(&headers)?;
+    Ok(Json(serde_json::json!({
+        "synthetic": true,
+        "session_ref": &id[..8],
+        "ttl_seconds": 86400,
+        "note": "The raw session credential stays in the HttpOnly cookie."
+    })))
+}
+
+async fn signing_keys(State(app): State<AppState>) -> Json<serde_json::Value> {
+    let public = hex::encode(app.signing_key.verifying_key().as_bytes());
+    Json(serde_json::json!({
+        "purpose": "report",
+        "keys": [{"id": "local-report", "public_key": public, "status": "active"}],
+        "note": "A key fetched from this server is a comparison aid, not independent trust."
+    }))
+}
+
+fn seal_id(role: &str, generation: i64, root: &str) -> String {
+    format!("{role}:{generation}:{root}")
+}
+
+async fn seal_report(
+    State(app): State<AppState>,
+    Path(role_id): Path<String>,
+    headers: HeaderMap,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    let id = existing_role_stream(&app, &session(&headers)?, &role_id).await?;
+    let (generation, state) = app.read_scenario(&id).await?;
+    if state.role_id != role_id {
+        return Err(StatusCode::NOT_FOUND);
+    }
+    let root = state
+        .events
+        .last()
+        .map(|e| e.hash.clone())
+        .unwrap_or_else(|| "genesis".into());
+    let seal = seal_id(&role_id, generation, &root);
+    let cache_key = format!("{id}:{seal}");
+    if let Some(store) = &app.store {
+        if let Some(existing) = store.load_seal(&seal, &id).await.map_err(|e| e.status())? {
+            return Ok(Json(existing));
+        }
+    } else if let Some(existing) = app.seals.lock().expect("seals").get(&cache_key) {
+        return Ok(Json(existing.clone()));
+    }
+    let bundle = create_replay_bundle(&state, &app.signing_key, "local-report")
+        .map_err(|_| StatusCode::CONFLICT)?;
+    let body = serde_json::json!({
+        "seal_id": seal,
+        "role_id": role_id,
+        "generation": generation,
+        "sequence": state.events.len(),
+        "rules_version": state.rules_version,
+        "bundle": bundle,
+    });
+    if let Some(store) = &app.store {
+        store
+            .save_seal(&store::SealRecord {
+                seal_id: &seal,
+                session_id: &id,
+                role_id: &role_id,
+                generation,
+                sequence: state.events.len() as i64,
+                rules_version: &state.rules_version,
+                bundle: &body,
+            })
+            .await
+            .map_err(|e| e.status())?;
+    } else {
+        app.seals
+            .lock()
+            .expect("seals")
+            .insert(cache_key, body.clone());
+    }
+    Ok(Json(body))
+}
+
+async fn sealed_report(
+    State(app): State<AppState>,
+    Path((role_id, seal_id)): Path<(String, String)>,
+    headers: HeaderMap,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    sealed_bundle(State(app), Path((role_id, seal_id)), headers).await
+}
+
+async fn sealed_bundle(
+    State(app): State<AppState>,
+    Path((role_id, seal_id)): Path<(String, String)>,
+    headers: HeaderMap,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    let id = existing_role_stream(&app, &session(&headers)?, &role_id).await?;
+    if let Some(store) = &app.store {
+        if let Some(body) = store
+            .load_seal(&seal_id, &id)
+            .await
+            .map_err(|e| e.status())?
+        {
+            return Ok(Json(body));
+        }
+    }
+    let cache_key = format!("{id}:{seal_id}");
+    app.seals
+        .lock()
+        .expect("seals")
+        .get(&cache_key)
+        .cloned()
+        .map(Json)
+        .ok_or(StatusCode::NOT_FOUND)
 }
 
 #[cfg(test)]

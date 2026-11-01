@@ -42,16 +42,32 @@ fn claim_line(
 
     let added_after_hires = hires
         .iter()
-        .any(|d| criterion.added_at.as_str() > d.at.as_str());
-    let same_day_as_hire = hires.iter().any(|d| criterion.added_at == d.at);
+        .any(|d| ordered_after(&criterion.added_at, &d.at) == Some(true));
+    let unordered = hires
+        .iter()
+        .any(|d| ordered_after(&criterion.added_at, &d.at).is_none());
     let missing_evidence = hires.iter().chain(rejects.iter()).any(|d| {
         !state
             .evidence
             .iter()
             .any(|e| e.person == d.person && e.criterion == criterion.id)
     });
+    let unknown_count = hires
+        .iter()
+        .chain(rejects.iter())
+        .filter(|d| {
+            !state
+                .evidence
+                .iter()
+                .any(|e| e.person == d.person && e.criterion == criterion.id)
+        })
+        .count();
     let every_reject_met =
         !rejects.is_empty() && rejects.iter().all(|d| met(state, &d.person, &criterion.id));
+    let support_removed = state
+        .removed_supporters
+        .iter()
+        .any(|id| id == &criterion.added_by);
 
     let (eligible, refusal, reason) = if added_after_hires {
         (
@@ -62,7 +78,7 @@ fn claim_line(
                 criterion.text, criterion.added_at
             ),
         )
-    } else if same_day_as_hire {
+    } else if unordered {
         (
             false,
             Some(RefusalCode::RInsufficientData),
@@ -89,13 +105,13 @@ fn claim_line(
                 criterion.text
             ),
         )
-    } else if criterion.added_by == "mina" && !state.support_present {
+    } else if support_removed {
         (
             false,
             Some(RefusalCode::RSupportGone),
             format!(
-                "{} kept its historical count. Mina, who added it, is no longer support, so it cannot be repeated as predicted.",
-                criterion.text
+                "{} kept its historical count. {}, who added it, is no longer support, so it cannot be repeated as predicted.",
+                criterion.text, criterion.added_by
             ),
         )
     } else {
@@ -118,29 +134,37 @@ fn claim_line(
         eligible,
         refusal,
         reason,
+        all_refusals: refusal.into_iter().collect(),
+        unknown_count,
     }
 }
 
 fn operation_lines(state: &State) -> Vec<ClaimLine> {
     let total = state.receipts.len();
-    let acked = state.receipts.iter().filter(|r| r.acknowledged).count();
-    let (ack_ok, ack_code, ack_reason) = if total == 0 {
+    let expected: u32 = state.receipts.iter().map(Receipt::expected).sum();
+    let observed: u32 = state.receipts.iter().map(Receipt::observed).sum();
+    let (ack_ok, ack_code, ack_reason, ack_naive) = if total == 0 {
         (
             false,
-            Some(RefusalCode::RNoAck),
-            "No receipt has been created, so there is no acknowledgement to report.".into(),
+            None,
+            "No delivery has been requested, so there is no acknowledgement to report.".into(),
+            "No delivery requested".into(),
         )
-    } else if acked == total {
+    } else if observed >= expected && expected > 0 {
         (
             true,
             None,
-            "Every receipt in this batch has an acknowledgement.".into(),
+            "Every required acknowledgement in this batch has been recorded.".into(),
+            format!("{observed} of {expected} acknowledgements"),
         )
     } else {
         (
             false,
             Some(RefusalCode::RNoAck),
-            "A receipt is still unacknowledged. The operation stays pending.".into(),
+            format!(
+                "acknowledged={observed}, expected={expected}, reason=partial. A receipt is still unacknowledged."
+            ),
+            format!("{observed} of {expected} acknowledgements"),
         )
     };
     let stale = state
@@ -172,6 +196,7 @@ fn operation_lines(state: &State) -> Vec<ClaimLine> {
             ),
         )
     };
+    let hold_recorded = state.hold_confirmed || state.hold_pending || !state.holds.is_empty();
     let rubric_old = state
         .interviews
         .iter()
@@ -188,7 +213,7 @@ fn operation_lines(state: &State) -> Vec<ClaimLine> {
         line(
             "op-ack",
             "Acknowledged by Northwind",
-            &format!("{acked} of {total} receipts"),
+            &ack_naive,
             ack_ok,
             ack_code,
             ack_reason,
@@ -199,25 +224,38 @@ fn operation_lines(state: &State) -> Vec<ClaimLine> {
             "0 operations",
             false,
             Some(RefusalCode::RNoOp),
-            "Northwind declares no push operation, so this cannot be reported as synced.".into(),
+            if state.link_operations.iter().any(|op| op == "sync")
+                && observed >= expected
+                && total > 0
+            {
+                "A declared sync capability still needs its own completed operation. Acknowledgement does not make the sync true.".into()
+            } else if state.link_operations.iter().any(|op| op == "sync") {
+                "Northwind declares a sync operation, but it has not completed.".into()
+            } else {
+                "Northwind declares no push operation, so this cannot be reported as synced.".into()
+            },
         ),
         line(
             "op-hold",
             "Debrief booked",
-            if state.hold_confirmed {
+            if !hold_recorded {
+                "No hold recorded"
+            } else if state.hold_confirmed {
                 "confirmed"
             } else if state.hold_pending {
                 "confirmation pending"
             } else {
-                "1 hold"
+                "unconfirmed"
             },
             state.hold_confirmed,
-            if state.hold_confirmed {
+            if state.hold_confirmed || !hold_recorded {
                 None
             } else {
                 Some(RefusalCode::RUnconfirmed)
             },
-            if state.hold_confirmed {
+            if !hold_recorded {
+                "No hold is recorded, so there is nothing to book.".into()
+            } else if state.hold_confirmed {
                 "A simulated confirmation was recorded.".into()
             } else if state.hold_pending {
                 "Confirmation was requested but is still pending; the hold is not booked.".into()
@@ -236,18 +274,24 @@ fn operation_lines(state: &State) -> Vec<ClaimLine> {
         line(
             "op-rubric",
             "Interview on the active standard",
-            if rubric_old {
+            if state.interviews.is_empty() {
+                "No interview to evaluate"
+            } else if rubric_old {
                 "bound earlier"
             } else {
                 "bound to active"
             },
-            !rubric_old,
-            if rubric_old {
+            !state.interviews.is_empty() && !rubric_old,
+            if state.interviews.is_empty() {
+                None
+            } else if rubric_old {
                 Some(RefusalCode::RRubricOld)
             } else {
                 None
             },
-            if rubric_old {
+            if state.interviews.is_empty() {
+                "No interview is recorded, so there is no rubric to evaluate.".into()
+            } else if rubric_old {
                 "The open interview keeps the rubric it started on.".into()
             } else {
                 "The interview rubric matches the active standard.".into()
@@ -327,7 +371,19 @@ fn line(
         eligible,
         refusal,
         reason,
+        all_refusals: refusal.into_iter().collect(),
+        unknown_count: 0,
     }
+}
+
+/// Date-only values compare as dates. A date-only tie, or mixed precision, has no order.
+fn ordered_after(criterion_at: &str, decision_at: &str) -> Option<bool> {
+    let criterion_date = criterion_at.len() == 10;
+    let decision_date = decision_at.len() == 10;
+    if criterion_date != decision_date || criterion_at == decision_at {
+        return None;
+    }
+    Some(criterion_at > decision_at)
 }
 
 fn met(state: &State, person: &str, criterion: &str) -> bool {

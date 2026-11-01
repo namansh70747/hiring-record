@@ -10,6 +10,16 @@ pub struct Store {
     pool: PgPool,
 }
 
+pub struct SealRecord<'a> {
+    pub seal_id: &'a str,
+    pub session_id: &'a str,
+    pub role_id: &'a str,
+    pub generation: i64,
+    pub sequence: i64,
+    pub rules_version: &'a str,
+    pub bundle: &'a serde_json::Value,
+}
+
 #[derive(Debug)]
 pub enum StoreError {
     Database(sqlx::Error),
@@ -122,6 +132,40 @@ impl Store {
             sqlx::query("INSERT INTO hr_schema_migrations (version) VALUES (5)")
                 .execute(&mut *tx)
                 .await?;
+        }
+        for (version, sql) in [
+            (
+                6_i64,
+                include_str!("../migrations/0006_sessions_and_ownership.sql"),
+            ),
+            (
+                7,
+                include_str!("../migrations/0007_event_envelopes_and_projection.sql"),
+            ),
+            (8, include_str!("../migrations/0008_workflow_lifecycle.sql")),
+            (9, include_str!("../migrations/0009_report_seals.sql")),
+            (
+                10,
+                include_str!("../migrations/0010_shared_limits_and_mcp_grants.sql"),
+            ),
+            (
+                11,
+                include_str!("../migrations/0011_operator_audit_and_retention.sql"),
+            ),
+        ] {
+            let applied: bool = sqlx::query_scalar(
+                "SELECT EXISTS (SELECT 1 FROM hr_schema_migrations WHERE version = $1)",
+            )
+            .bind(version)
+            .fetch_one(&mut *tx)
+            .await?;
+            if !applied {
+                sqlx::raw_sql(sql).execute(&mut *tx).await?;
+                sqlx::query("INSERT INTO hr_schema_migrations (version) VALUES ($1)")
+                    .bind(version)
+                    .execute(&mut *tx)
+                    .await?;
+            }
         }
         tx.commit().await?;
         Ok(Self { pool })
@@ -362,6 +406,44 @@ impl Store {
         tx.commit().await?;
         Ok(response)
     }
+    pub async fn save_seal(
+        &self,
+        seal: &SealRecord<'_>,
+    ) -> Result<(), StoreError> {
+        sqlx::query(
+            "INSERT INTO hr_report_seals (seal_id, session_id, role_id, generation, sequence, rules_version, bundle)
+             VALUES ($1,$2,$3,$4,$5,$6,$7)
+             ON CONFLICT (seal_id) DO NOTHING",
+        )
+        .bind(seal.seal_id)
+        .bind(seal.session_id)
+        .bind(seal.role_id)
+        .bind(seal.generation)
+        .bind(seal.sequence)
+        .bind(seal.rules_version)
+        .bind(seal.bundle)
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
+    pub async fn load_seal(
+        &self,
+        seal_id: &str,
+        session_id: &str,
+    ) -> Result<Option<serde_json::Value>, StoreError> {
+        let row =
+            sqlx::query("SELECT bundle FROM hr_report_seals WHERE seal_id=$1 AND session_id=$2")
+                .bind(seal_id)
+                .bind(session_id)
+                .fetch_optional(&self.pool)
+                .await?;
+        Ok(match row {
+            Some(row) => Some(row.try_get("bundle")?),
+            None => None,
+        })
+    }
+
     #[cfg(test)]
     pub async fn reset(&self, id: &str) -> Result<(), StoreError> {
         sqlx::query("INSERT INTO hr_demo_streams (session_id, generation, sequence) VALUES ($1, 0, 0) ON CONFLICT (session_id) DO UPDATE SET generation = hr_demo_streams.generation + 1, sequence = 0")

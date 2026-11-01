@@ -728,6 +728,7 @@ fn new_role_preserves_predecision_evidence_after_reassessment() {
         criterion: "build".into(),
         met: true,
         citation: Some("source".into()),
+        unknown: false,
     };
     apply(
         &mut state,

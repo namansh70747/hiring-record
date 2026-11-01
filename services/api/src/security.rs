@@ -39,18 +39,43 @@ fn inspect(key: &ed25519_dalek::SigningKey, token: &str) -> Option<String> {
         .ok()?;
     Some(parts[0].to_owned())
 }
-fn error(status: StatusCode, code: &str, message: &str) -> Response {
+fn error(status: StatusCode, code: &str, message: &str, request_id: &str) -> Response {
     (
         status,
-        Json(serde_json::json!({"error":{"code":code,"message":message}})),
+        Json(serde_json::json!({"error":{"code":code,"message":message,"retryable": status==StatusCode::TOO_MANY_REQUESTS,"request_id":request_id}})),
     )
         .into_response()
+}
+
+pub fn utc_now() -> String {
+    let secs = now() as i64;
+    let days = secs.div_euclid(86_400);
+    let tod = secs.rem_euclid(86_400);
+    let z = days + 719_468;
+    let era = if z >= 0 { z } else { z - 146_096 } / 146_097;
+    let doe = (z - era * 146_097) as u64;
+    let yoe = (doe - doe / 1460 + doe / 36524 - doe / 146_096) / 365;
+    let y = yoe as i64 + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = doy - (153 * mp + 2) / 5 + 1;
+    let m = if mp < 10 { mp + 3 } else { mp - 9 };
+    let y = if m <= 2 { y + 1 } else { y };
+    format!(
+        "{y:04}-{m:02}-{d:02}T{:02}:{:02}:{:02}Z",
+        tod / 3600,
+        tod % 3600 / 60,
+        tod % 60
+    )
 }
 pub async fn protect(
     State(app): State<AppState>,
     mut request: Request<Body>,
     next: Next,
 ) -> Response {
+    let mut request_id_bytes = [0u8; 16];
+    OsRng.fill_bytes(&mut request_id_bytes);
+    let request_id = hex::encode(request_id_bytes);
     let protected = request.uri().path().starts_with("/v1/");
     let peer = request
         .extensions()
@@ -82,6 +107,7 @@ pub async fn protect(
                         StatusCode::UNAUTHORIZED,
                         "SESSION_EXPIRED",
                         "Your scenario session expired. Start a new session to continue.",
+                        &request_id,
                     )
                 }
             },
@@ -112,6 +138,7 @@ pub async fn protect(
                     StatusCode::TOO_MANY_REQUESTS,
                     "RATE_LIMITED",
                     "Too many requests from this network. Wait a minute and retry.",
+                    &request_id,
                 );
             }
             if limits.len() >= 10000 && !limits.contains_key(&id) {
@@ -119,6 +146,7 @@ pub async fn protect(
                     StatusCode::TOO_MANY_REQUESTS,
                     "CAPACITY",
                     "Demo capacity reached. Try again later.",
+                    &request_id,
                 );
             }
             let entry = limits.entry(id.clone()).or_insert((now(), 0));
@@ -128,6 +156,7 @@ pub async fn protect(
                     StatusCode::TOO_MANY_REQUESTS,
                     "RATE_LIMITED",
                     "Too many requests. Wait a minute and retry.",
+                    &request_id,
                 );
             }
         }
@@ -157,11 +186,9 @@ pub async fn protect(
     response
         .headers_mut()
         .insert("record-version", HeaderValue::from_static("1"));
-    let mut request_id = [0u8; 16];
-    OsRng.fill_bytes(&mut request_id);
     response.headers_mut().insert(
         "x-request-id",
-        HeaderValue::from_str(&hex::encode(request_id)).expect("request id"),
+        HeaderValue::from_str(&request_id).expect("request id"),
     );
     if app.public_origin.starts_with("https://") {
         response.headers_mut().insert(
@@ -174,7 +201,15 @@ pub async fn protect(
             && !response.headers().contains_key("content-type")
         {
             let status = response.status();
-            *response.body_mut() = Body::from(serde_json::json!({"error":{"code":status.as_str(),"message":status.canonical_reason().unwrap_or("Request failed")}}).to_string());
+            let code = match status {
+                StatusCode::CONFLICT => "VERSION_CONFLICT",
+                StatusCode::UNAUTHORIZED => "SESSION_EXPIRED",
+                StatusCode::NOT_FOUND => "NOT_FOUND",
+                StatusCode::TOO_MANY_REQUESTS => "RATE_LIMITED",
+                StatusCode::BAD_REQUEST => "INVALID_COMMAND",
+                _ => "REQUEST_FAILED",
+            };
+            *response.body_mut() = Body::from(serde_json::json!({"error":{"code":code,"message":status.canonical_reason().unwrap_or("Request failed"),"retryable":status==StatusCode::TOO_MANY_REQUESTS,"request_id":request_id}}).to_string());
             response
                 .headers_mut()
                 .insert("content-type", HeaderValue::from_static("application/json"));

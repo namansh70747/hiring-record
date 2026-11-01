@@ -27,7 +27,7 @@ export function verifyBundle(input: unknown): Result {
   if (bundle.format !== 'hiring-record-bundle/v1' || bundle.algorithm !== 'Ed25519') throw new Error('Unsupported bundle format or algorithm.');
   if (typeof bundle.public_key !== 'string' || !/^[a-f0-9]{64}$/i.test(bundle.public_key) || typeof bundle.signature !== 'string' || !/^[a-f0-9]{128}$/i.test(bundle.signature) || typeof bundle.payload !== 'string') throw new Error('The bundle has an invalid key, signature or payload.');
   const payload: Payload = JSON.parse(bundle.payload);
-  if (!['hiring-record-payload/v1','hiring-record-payload/v2'].includes(payload.format) || !Array.isArray(payload.events) || !payload.report || typeof payload.role_id !== 'string') throw new Error('The payload format is invalid.');
+  if (!['hiring-record-payload/v1','hiring-record-payload/v2','hiring-record-payload/v3'].includes(payload.format) || !Array.isArray(payload.events) || !payload.report || typeof payload.role_id !== 'string') throw new Error('The payload format is invalid.');
   let signatureValid = false;
   try { signatureValid = ed25519.verify(hexToBytes(bundle.signature), utf8ToBytes(bundle.payload), hexToBytes(bundle.public_key)); } catch { signatureValid = false; }
   return { signatureValid, chainValid: verifyChain(payload.events), publicKey: bundle.public_key, payload };

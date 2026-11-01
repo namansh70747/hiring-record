@@ -16,6 +16,29 @@ pub fn decide(state: &State, command: Command) -> Result<Event, Rejection> {
             return Err(Rejection::AlreadyRecorded)
         }
         Command::RemoveSupport if !state.support_present => return Err(Rejection::AlreadyRecorded),
+        Command::RemoveSupporter { supporter_id }
+            if state.removed_supporters.iter().any(|id| id == supporter_id) =>
+        {
+            return Err(Rejection::AlreadyRecorded)
+        }
+        Command::RecordAcknowledgement {
+            receipt_id,
+            acknowledgement_id,
+        } => {
+            let receipt = state
+                .receipts
+                .iter()
+                .find(|receipt| receipt.id == *receipt_id)
+                .ok_or_else(|| Rejection::ReceiptUnavailable(receipt_id.clone()))?;
+            if receipt.acknowledged
+                || receipt
+                    .acknowledgement_ids
+                    .iter()
+                    .any(|id| id == acknowledgement_id)
+            {
+                return Err(Rejection::AlreadyRecorded);
+            }
+        }
         _ => {}
     }
     if let Command::Dismiss { proposal_id } | Command::Approve { proposal_id, .. } = &command {
@@ -71,6 +94,7 @@ pub fn decide(state: &State, command: Command) -> Result<Event, Rejection> {
         payload,
         prev_hash,
         hash: String::new(),
+        envelope: None,
     };
     event.hash = hash_event(&event);
     debug_assert_eq!(event.hash, hash_event(&event));
@@ -118,11 +142,10 @@ pub fn evolve(state: &mut State, event: Event) {
                 effective_at,
                 criteria,
             };
-            state.receipts.push(Receipt {
-                id: format!("nw-{version_id}"),
-                label: "Northwind stage write".into(),
-                acknowledged: false,
-            });
+            state.receipts.push(Receipt::pending(
+                format!("nw-{version_id}"),
+                "Northwind stage write",
+            ));
         }
         EventKind::ReceiptAcknowledged => {
             let id = payload_field(&event.payload, "receipt");
@@ -133,8 +156,22 @@ pub fn evolve(state: &mut State, event: Event) {
         EventKind::HoldConfirmed => {
             state.hold_confirmed = true;
             state.hold_pending = false;
+            if let Some(hold) = state.holds.iter_mut().find(|hold| hold.id == "debrief") {
+                hold.status = "confirmed".into();
+            }
         }
-        EventKind::SupportRemoved => state.support_present = false,
+        EventKind::SupportRemoved => {
+            let person = payload_field(&event.payload, "person");
+            let person = if person.is_empty() {
+                "mina".into()
+            } else {
+                person
+            };
+            if !state.removed_supporters.iter().any(|id| id == &person) {
+                state.removed_supporters.push(person);
+            }
+            state.support_present = false;
+        }
     }
     state.events.push(event);
 }
@@ -295,7 +332,7 @@ pub fn replay_event(state: &mut State, event: Event) -> Result<(), Rejection> {
         }
     };
     let expected = decide(state, command)?;
-    if expected != event {
+    if !same_chain(&expected, &event) {
         return Err(Rejection::Invalid(
             "event does not match the expected transition or hash".into(),
         ));
@@ -333,6 +370,27 @@ fn assessments_on_active(state: &State) -> usize {
         .into_iter()
         .filter(|a| a.version == state.active.id)
         .count()
+}
+
+pub fn same_chain(left: &Event, right: &Event) -> bool {
+    left.seq == right.seq
+        && left.kind == right.kind
+        && left.payload == right.payload
+        && left.prev_hash == right.prev_hash
+        && left.hash == right.hash
+}
+
+/// Attach recorded time and actor without changing the v1 event hash.
+pub fn attach_provenance(event: &mut Event, recorded_at: Option<String>, actor: Option<String>) {
+    if recorded_at.is_none() && actor.is_none() {
+        return;
+    }
+    event.envelope = Some(crate::EventEnvelope {
+        schema_version: 2,
+        recorded_at,
+        actor,
+        command_id: None,
+    });
 }
 
 fn payload_field(payload: &str, key: &str) -> String {
@@ -459,29 +517,31 @@ fn validate_command(state: &State, command: &Command) -> Result<(), Rejection> {
                 return Err(invalid("source needs a unique ID, known person and quote"));
             }
         }
-        Command::Assess { assessment } => {
-            if !valid_id(&assessment.id)
-                || state.assessments.iter().any(|a| a.id == assessment.id)
-                || !person_exists(&assessment.person)
-                || assessment.version != state.active.id
-                || !state
-                    .active
-                    .criteria
-                    .iter()
-                    .any(|c| c.id == assessment.criterion)
-            {
-                return Err(invalid("assessment must reference a known person and active criterion, with a unique ID"));
+        Command::Assess { assessment } => validate_assessment(state, assessment, None)?,
+        Command::RecordSourceAndAssessment { source, assessment } => {
+            if assessment.citation.as_deref() != Some(source.id.as_str()) {
+                return Err(invalid(
+                    "an atomic assessment must cite the source saved with it",
+                ));
             }
-            if let Some(citation) = &assessment.citation {
-                if !state
-                    .sources
-                    .iter()
-                    .any(|s| s.id == *citation && s.person == assessment.person)
-                {
-                    return Err(invalid(
-                        "citation belongs to a different person or does not exist",
-                    ));
-                }
+            if assessment.person != source.person {
+                return Err(invalid(
+                    "source and assessment must belong to the same person",
+                ));
+            }
+            validate_assessment(state, assessment, Some(&source.id))?;
+        }
+        Command::RemoveSupporter { supporter_id } => {
+            if !valid_id(supporter_id) {
+                return Err(invalid("supporter id is not valid"));
+            }
+        }
+        Command::RecordAcknowledgement {
+            receipt_id,
+            acknowledgement_id,
+        } => {
+            if !valid_id(acknowledgement_id) || !valid_id(receipt_id) {
+                return Err(invalid("acknowledgement needs valid ids"));
             }
         }
         Command::RecordFact { fact } => {
@@ -566,6 +626,64 @@ fn validate_command(state: &State, command: &Command) -> Result<(), Rejection> {
     }
     Ok(())
 }
+fn validate_assessment(
+    state: &State,
+    assessment: &Assessment,
+    pending_source: Option<&str>,
+) -> Result<(), Rejection> {
+    let invalid = |message: &str| Rejection::Invalid(message.into());
+    if !valid_id(&assessment.id)
+        || state.assessments.iter().any(|a| a.id == assessment.id)
+        || !state.people.iter().any(|p| p.id == assessment.person)
+        || assessment.version != state.active.id
+        || !state
+            .active
+            .criteria
+            .iter()
+            .any(|c| c.id == assessment.criterion)
+        || (assessment.unknown && assessment.met)
+    {
+        return Err(invalid(
+            "assessment must reference a known person and active criterion, with a unique ID",
+        ));
+    }
+    if let Some(citation) = &assessment.citation {
+        let pending = pending_source == Some(citation.as_str());
+        if !pending
+            && !state
+                .sources
+                .iter()
+                .any(|s| s.id == *citation && s.person == assessment.person)
+        {
+            return Err(invalid(
+                "citation belongs to a different person or does not exist",
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn record_assessment(state: &mut State, assessment: Assessment) {
+    // Unknown stays unknown. It must not become a recorded “not met”.
+    // Pre-decision evidence is replaced for that criterion; historical assessment rows stay.
+    if !assessment.unknown
+        && !state
+            .decisions
+            .iter()
+            .any(|decision| decision.person == assessment.person)
+    {
+        state
+            .evidence
+            .retain(|e| e.person != assessment.person || e.criterion != assessment.criterion);
+        state.evidence.push(Evidence {
+            person: assessment.person.clone(),
+            criterion: assessment.criterion.clone(),
+            met: assessment.met,
+        });
+    }
+    state.assessments.push(assessment);
+}
+
 fn evolve_domain(state: &mut State, command: Command) {
     match command {
         Command::OpenRole { role_id, standard } => {
@@ -575,23 +693,28 @@ fn evolve_domain(state: &mut State, command: Command) {
         Command::AddPerson { person } => state.people.push(person),
         Command::Propose { proposal } => state.proposals.push(proposal),
         Command::RecordSource { source } => state.sources.push(source),
-        Command::Assess { assessment } => {
-            // Capture pre-decision evidence. Later reassessments must not rewrite historical decisions.
-            if !state
-                .decisions
-                .iter()
-                .any(|decision| decision.person == assessment.person)
-            {
-                state.evidence.retain(|e| {
-                    e.person != assessment.person || e.criterion != assessment.criterion
-                });
-                state.evidence.push(Evidence {
-                    person: assessment.person.clone(),
-                    criterion: assessment.criterion.clone(),
-                    met: assessment.met,
-                });
+        Command::RecordSourceAndAssessment { source, assessment } => {
+            state.sources.push(source);
+            record_assessment(state, assessment);
+        }
+        Command::Assess { assessment } => record_assessment(state, assessment),
+        Command::RemoveSupporter { supporter_id } => {
+            if supporter_id == "mina" {
+                state.support_present = false;
             }
-            state.assessments.push(assessment);
+            state.removed_supporters.push(supporter_id);
+        }
+        Command::RecordAcknowledgement {
+            receipt_id,
+            acknowledgement_id,
+        } => {
+            if let Some(receipt) = state.receipts.iter_mut().find(|r| r.id == receipt_id) {
+                receipt.acknowledgement_ids.push(acknowledgement_id);
+                receipt.observed_acks = receipt.acknowledgement_ids.len() as u32;
+                if receipt.observed() >= receipt.expected() {
+                    receipt.acknowledged = true;
+                }
+            }
         }
         Command::RecordFact { fact } => state.facts.push(fact),
         Command::RecordDecision { decision } => {
@@ -606,17 +729,27 @@ fn evolve_domain(state: &mut State, command: Command) {
         }
         Command::OverrideDecision { decision_override } => state.overrides.push(decision_override),
         Command::BindInterview { binding } => state.interviews.push(binding),
-        Command::RequestHoldConfirmation => state.hold_pending = true,
+        Command::RequestHoldConfirmation => {
+            state.hold_pending = true;
+            if let Some(hold) = state.holds.iter_mut().find(|hold| hold.id == "debrief") {
+                hold.status = "confirmation_requested".into();
+            } else {
+                state.holds.push(Hold {
+                    id: "debrief".into(),
+                    label: "Debrief".into(),
+                    status: "confirmation_requested".into(),
+                });
+            }
+        }
         Command::OfferQuote { quote } => state.quotes.push(quote),
         Command::AcceptQuote { quote_id } => {
             if let Some(quote) = state.quotes.iter_mut().find(|q| q.id == quote_id) {
                 quote.status = "accepted".into();
             }
-            state.receipts.push(Receipt {
-                id: format!("quote-{quote_id}"),
-                label: "Simulated quote delivery".into(),
-                acknowledged: false,
-            });
+            state.receipts.push(Receipt::pending(
+                format!("quote-{quote_id}"),
+                "Simulated quote delivery",
+            ));
         }
         Command::DeclineQuote { quote_id } => {
             if let Some(quote) = state.quotes.iter_mut().find(|q| q.id == quote_id) {

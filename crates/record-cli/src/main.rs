@@ -180,6 +180,7 @@ fn verify(path: &str, trusted: Option<&str>) -> Result<bool, String> {
             "unknown (compare public key independently)"
         }
     );
+    println!("replay: {}", result.replay);
     println!("public key: {}", bundle.public_key);
     println!("Source evidence and factual accuracy are not verified by this bundle.");
     Ok(

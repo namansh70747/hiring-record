@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import './globals.css';
 import './readability.css';
+import '../styles/tokens.css';
 
 export const metadata: Metadata = {
   title: 'Hiring Record — Every decision has a history',

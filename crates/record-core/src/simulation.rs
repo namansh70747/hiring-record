@@ -177,6 +177,87 @@ pub fn simulate(initial: &State, seed: u64, rounds: usize) -> Result<SimulationR
     }
     Ok(result)
 }
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ScheduledStep {
+    pub index: usize,
+    pub action: String,
+    pub fault: String,
+    pub ok: bool,
+    pub event_count: usize,
+    pub root: String,
+}
+
+/// Stateful schedule used by the lab. The simple `simulate` regression mode stays capped.
+pub fn run_schedule(initial: &State, actions: &[String]) -> Result<Vec<ScheduledStep>, String> {
+    if !initial.events.is_empty() {
+        return Err("schedule requires an opening state".into());
+    }
+    let mut state = initial.clone();
+    let mut steps = Vec::new();
+    for (index, action) in actions.iter().enumerate() {
+        let fault = if action.ends_with(":duplicate") {
+            "duplicate"
+        } else {
+            ""
+        };
+        let name = action.trim_end_matches(":duplicate");
+        let command = match name {
+            "approve" => Command::Approve {
+                proposal_id: "B".into(),
+                new_version_id: "B2".into(),
+            },
+            "dismiss" => Command::Dismiss {
+                proposal_id: "B".into(),
+            },
+            "ack" => Command::Acknowledge {
+                receipt_id: "nw-B2".into(),
+            },
+            other => return Err(format!("unsupported schedule action {other}")),
+        };
+        let ok = apply(&mut state, command.clone()).is_ok();
+        if fault == "duplicate" {
+            let _ = apply(&mut state, command);
+        }
+        steps.push(ScheduledStep {
+            index,
+            action: action.clone(),
+            fault: fault.into(),
+            ok,
+            event_count: state.events.len(),
+            root: state
+                .events
+                .last()
+                .map(|e| e.hash.clone())
+                .unwrap_or_else(|| "genesis".into()),
+        });
+    }
+    Ok(steps)
+}
+
+/// Drop a middle step while the failure remains. This is a minimized reproducer, not a proof of minimality.
+pub fn minimize_schedule(
+    initial: &State,
+    actions: &[String],
+    fails: impl Fn(&[ScheduledStep]) -> bool,
+) -> Result<Vec<String>, String> {
+    let mut current = actions.to_vec();
+    let mut index = 0;
+    while index < current.len() {
+        let mut candidate = current.clone();
+        candidate.remove(index);
+        if candidate.is_empty() {
+            break;
+        }
+        let steps = run_schedule(initial, &candidate)?;
+        if fails(&steps) {
+            current = candidate;
+        } else {
+            index += 1;
+        }
+    }
+    Ok(current)
+}
+
 fn check(result: &mut SimulationResult, ok: bool, round: usize, invariant: &str) {
     result.checks += 1;
     if !ok {

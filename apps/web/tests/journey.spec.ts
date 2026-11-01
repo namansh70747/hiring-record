@@ -100,23 +100,24 @@ test('live updates reach another tab with the same session',async({page,context}
 });
 
 test('create a synthetic role, assess a person and change the standard',async({page})=>{
+  const id=`test-${Date.now()}`;
   await page.goto('/roles/');
-  await page.getByLabel('Role ID').fill(`test-${Date.now()}`);
+  await page.getByLabel('Role ID').fill(id);
   await page.getByLabel('First criterion').fill('Built systems');
   await page.getByRole('button',{name:'Create synthetic role'}).click();
-  await expect(page.getByRole('heading',{name:'Hiring standard'})).toBeVisible();
+  await expect(page).toHaveURL(new RegExp(`/record/\\?role=${id}`));
   await page.getByLabel('Synthetic person name').fill('Sam');
   await page.getByRole('button',{name:'Add person'}).click();
-  await page.getByRole('combobox',{name:'Person'}).selectOption({label:'Sam'});
+  await page.getByRole('combobox',{name:'Person to assess'}).selectOption({label:'Sam'});
   await page.getByLabel('Source excerpt').fill('Built the first synthetic system.');
-  await page.getByRole('button',{name:'Save source and assess first criterion'}).click();
-  await expect(page.getByText('Sam · in review · current')).toBeVisible();
+  await page.getByRole('button',{name:'Save source and assess selected criterion'}).click();
+  await expect(page.getByRole('button',{name:/Sam/}).first()).toBeVisible();
   await page.getByRole('button',{name:'Record hire'}).click();
   await expect(page.getByText(/Built systems: 1 of 1 hires/)).toBeVisible();
   await page.getByLabel('New criterion').fill('Led a launch');
   await page.getByRole('button',{name:'Propose change'}).click();
   await page.getByRole('button',{name:'Approve change'}).click();
-  await expect(page.getByText('Sam · hired · stale')).toBeVisible();
-  await page.reload();await expect(page.getByText('Start with a standard.')).toBeVisible();
-  await expect(page.getByRole('button',{name:/test-/})).toBeVisible();
+  await expect(page.getByText('Stale').first()).toBeVisible();
+  await page.reload();
+  await expect(page.getByRole('button',{name:/Sam/}).first()).toBeVisible();
 });
