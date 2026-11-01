@@ -24,7 +24,7 @@ pub fn start(app: AppState, ingress: String) {
                     continue;
                 };
                 let payload = job.to_string();
-                let signature = hex::encode(app.signing_key.sign(payload.as_bytes()).to_bytes());
+                let signature = hex::encode(app.workflow_key.sign(payload.as_bytes()).to_bytes());
                 let response = client
                     .post(format!(
                         "{}/restate/send/ReceiptDelivery/{id}/run",
@@ -65,7 +65,7 @@ pub async fn complete(
         &hex::decode(&callback.signature).map_err(|_| StatusCode::UNAUTHORIZED)?,
     )
     .map_err(|_| StatusCode::UNAUTHORIZED)?;
-    app.signing_key
+    app.workflow_key
         .verifying_key()
         .verify(callback.payload.as_bytes(), &signature)
         .map_err(|_| StatusCode::UNAUTHORIZED)?;

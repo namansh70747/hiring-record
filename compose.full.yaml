@@ -1,0 +1,55 @@
+services:
+  postgres:
+    image: postgres:18
+    environment:
+      POSTGRES_USER: hiring_record
+      POSTGRES_PASSWORD: local_demo_only
+      POSTGRES_DB: hiring_record
+    ports:
+      - '127.0.0.1:55432:5432'
+    volumes:
+      - hiring_record_pg:/var/lib/postgresql
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U hiring_record -d hiring_record']
+      interval: 2s
+      timeout: 3s
+      retries: 30
+  restate:
+    image: docker.restate.dev/restatedev/restate:1.7.13
+    command: ["--node-name=cb727df5b498"]
+    ports:
+      - '127.0.0.1:19080:8080'
+      - '127.0.0.1:19070:9070'
+    volumes:
+      - hiring_record_restate:/restate-data
+  northwind:
+    build: ./services/northwind
+    environment:
+      RECORD_API_URL: http://api:8080
+      NORTHWIND_STORE: /data/read-model.json
+    volumes:
+      - hiring_record_northwind:/data
+    ports:
+      - '127.0.0.1:19090:9080'
+      - '127.0.0.1:19091:9081'
+  api:
+    build: .
+    environment:
+      DATABASE_URL: postgres://hiring_record:local_demo_only@postgres:5432/hiring_record
+      RESTATE_INGRESS: http://restate:8080
+      PUBLIC_ORIGIN: http://127.0.0.1:8080
+      BIND_ADDRESS: 0.0.0.0:8080
+      NORTHWIND_CONTROL_URL: http://northwind:9081/faults
+      DEPLOYMENT_MODE: local
+    ports:
+      - '127.0.0.1:8080:8080'
+    volumes:
+      - hiring_record_keys:/data
+    depends_on:
+      postgres:
+        condition: service_healthy
+volumes:
+  hiring_record_pg:
+  hiring_record_restate:
+  hiring_record_northwind:
+  hiring_record_keys:

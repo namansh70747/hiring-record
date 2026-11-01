@@ -17,25 +17,25 @@ Audited baseline: `652155e`. This file records what this branch actually impleme
 | G11 / immutable baseline | passed | `seal_opening` stores digest, schema, rules version, and `opening_json` | Replayable bundle test |  |
 | G12 / replayable bundle | passed | `create_replay_bundle`, payload `hiring-record-payload/v3` | `replayable_bundle_uses_its_own_baseline` | v1/v2 remain integrity-only |
 | G13 / immutable report links | in_progress | `POST/GET /v1/roles/{role}/reports/{seal}` | API compiles; contract tests passed | UI still downloads the live bundle from Seal & export |
-| G14 / PDF embedded artifact | pending |  |  | No PDF attachment generator is implemented |
-| G15 / verification parity | in_progress | Browser verifier accepts payload v3; CLI prints replay status | Domain verify tests | WASM verifier was not extended to replay v3 |
-| G16 / scoped read-only MCP | pending | Sample MCP remains | Existing MCP tool test | Session grants are not issued |
-| G17 / synthetic read model/faults | pending | Northwind is still the timer callback | Existing workflow smoke not re-run | No persisted lagging read model |
+| G14 / PDF embedded artifact | passed | `apps/web/lib/report-pdf.ts`, report download, verify extraction | `node scripts/pdf-roundtrip.mjs` | Page bytes are not a signed PDF |
+| G15 / verification parity | in_progress | Browser verifier accepts payload v3 and PDF attachments; CLI prints replay status | Domain verify tests and PDF round-trip | WASM verifier was not extended to replay v3 |
+| G16 / scoped read-only MCP | passed | `POST /v1/mcp-grants`, bearer handling in `security.rs` and `mcp.rs` | `read_grant_is_scoped_to_the_issuing_session` | Grant storage is process memory, not yet the SQL table |
+| G17 / synthetic read model/faults | passed | `services/northwind/read-model.mjs`, control port 9081 | `node --test services/northwind/read-model.test.mjs` | Restate restart drill was not re-run in this session |
 | G18 / workflow lifecycle | in_progress | Migration `0008` adds status, lease, outcome columns | Migration file only | Dispatcher still records dispatched, not the full lifecycle |
 | G19 / stateful simulation | in_progress | `run_schedule`, `minimize_schedule` | Compiles with record-core tests | Lab UI still shows the capped regression simulator |
 | G20 / model/trace mapping | pending | Existing `spec/record.qnt` | Not re-run | Model was not expanded |
-| G21 / TTL and cleanup | pending | Migration `0006` and `0011` tables |  | Janitor is not implemented; cookie TTL behavior is unchanged |
-| G22 / shared limits and notifications | in_progress | `NOTIFY` trigger in `0007`; rate-bucket table in `0010` |  | SSE still polls once a second; limits stay process-local |
-| G23 / operator auth | pending |  |  | No OIDC provider is configured. Local operator UI is not built |
-| G24 / purpose-separated keys | pending | Signing-key discovery route added |  | Report, session, and workflow still share one key unless an operator configures separate files |
+| G21 / TTL and cleanup | passed | `services/api/src/janitor.rs`, `/operator/cleanup` dry run | `janitor::tests` | Dry run does not delete event rows |
+| G22 / shared limits and notifications | in_progress | `store.allow_request` uses `hr_rate_buckets` when PostgreSQL is configured; `NOTIFY` trigger is in `0007` | In-memory limit path remains for tests without a database | SSE still polls; the SQL limiter was not executed without `TEST_DATABASE_URL` |
+| G23 / operator auth | in_progress | Loopback `POST /operator/login`; production refuses `OPERATOR_DEV` | `operator::tests`, `operator_dev_login_is_rejected_without_a_credential` | No real OIDC issuer is configured |
+| G24 / purpose-separated keys | passed | `services/api/src/keys.rs`; server startup derives session and workflow keys | `keys::tests::purposes_do_not_share_key_bytes` | Historical bundles stay on the report key |
 | G25 / typed errors/request IDs | passed | `security.rs` assigns `x-request-id` before the handler and includes it on generated error bodies | API contract tests passed | Handlers that return a bare status still rely on the middleware body |
 | G26 / hardening/timeouts/cache | in_progress | Existing headers retained; private `/v1` responses stay `no-store` | Existing origin test | Route-aware timeouts are not complete |
 | G27 / organized styles | in_progress | `apps/web/styles/tokens.css`; Google Fonts request removed |  | `globals.css` and `readability.css` still contain the working layout |
 | G28 / accessibility/recording QA | pending | Existing axe smoke remains | Not re-run after this change | No new manual screen-reader recording |
 | G29 / CLI | in_progress | `record verify` prints replay status | `cargo test` does not execute the CLI binary | `replay`, `minimize`, and PDF verify commands are not wired |
-| G30 / complete local packaging | pending | `just up` unchanged |  | No full API container profile |
-| G31 / release/restore evidence | pending |  |  | Release workflow, SBOM, and restore smoke were not added |
-| G32 / deployment preparation/public smoke | external_dependency |  |  | No hosting or OIDC credentials are available. Public deployment was not performed |
+| G30 / complete local packaging | passed | `compose.full.yaml`, `just up-full` | File review | The full image was not booted in this session |
+| G31 / release/restore evidence | in_progress | `scripts/release-check.sh`, `scripts/backup-local.sh`, `.github/workflows/release.yml` | Local Rust, PDF, and Northwind checks | Trivy runs in the release workflow; it is not installed locally. No backup was taken because Postgres was not running |
+| G32 / deployment preparation/public smoke | external_dependency | `docs/deployment.md` |  | No hosting account or OIDC issuer was available, so there is no public URL |
 
 ## Domain cases exercised here
 

@@ -63,3 +63,13 @@ model-traces:
 
 sim-sweep seeds="10000" rounds="1":
     cargo run -q -p record-cli -- sweep {{seeds}} {{rounds}}
+
+# Full local container profile, including the API. Does not delete volumes.
+up-full:
+    docker compose -p hiring-record -f compose.full.yaml up -d --build --wait
+
+release-check:
+    ./scripts/release-check.sh
+
+backup-local:
+    ./scripts/backup-local.sh

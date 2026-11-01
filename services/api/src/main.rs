@@ -25,7 +25,10 @@ use tokio::net::TcpListener;
 use tower_http::services::ServeDir;
 
 mod api_document;
+mod janitor;
+mod keys;
 mod mcp;
+mod operator;
 mod security;
 mod store;
 mod workflows;
@@ -36,7 +39,10 @@ type RequestResults = HashMap<(String, String), (String, serde_json::Value)>;
 struct AppState {
     roles: Arc<Mutex<HashMap<String, (i64, RoleState)>>>,
     signing_key: Arc<ed25519_dalek::SigningKey>,
+    session_key: Arc<ed25519_dalek::SigningKey>,
+    workflow_key: Arc<ed25519_dalek::SigningKey>,
     store: Option<store::Store>,
+    grants: Arc<Mutex<HashMap<String, mcp::Grant>>>,
     public_origin: String,
     streams: Arc<tokio::sync::Semaphore>,
     results: Arc<Mutex<RequestResults>>,
@@ -66,6 +72,9 @@ impl Default for AppState {
             request_limits: Arc::new(Mutex::new(HashMap::new())),
             workflow_enabled: false,
             seals: Arc::new(Mutex::new(HashMap::new())),
+            session_key: Arc::new(ed25519_dalek::SigningKey::from_bytes(&[7; 32])),
+            workflow_key: Arc::new(ed25519_dalek::SigningKey::from_bytes(&[7; 32])),
+            grants: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 }
@@ -100,8 +109,27 @@ async fn main() {
         println!("{}", api_document::document());
         return;
     }
+    let report = security::load_key();
+    let report_bytes = report.to_bytes();
+    let mode = std::env::var("DEPLOYMENT_MODE").unwrap_or_else(|_| "local".into());
+    let session_key = keys::derive_key(&report_bytes, "hiring-record/session/v1");
+    let workflow_key = keys::derive_key(&report_bytes, "hiring-record/workflow/v1");
+    if mode == "production" {
+        if std::env::var("OPERATOR_DEV").is_ok() {
+            panic!("OPERATOR_DEV cannot be enabled in production");
+        }
+        if !keys::production_keys_acceptable(
+            &report_bytes,
+            &session_key.to_bytes(),
+            &workflow_key.to_bytes(),
+        ) {
+            panic!("production requires distinct report, session, and workflow keys");
+        }
+    }
     let mut state = AppState {
-        signing_key: Arc::new(security::load_key()),
+        signing_key: Arc::new(report),
+        session_key: Arc::new(session_key),
+        workflow_key: Arc::new(workflow_key),
         public_origin: std::env::var("PUBLIC_ORIGIN")
             .unwrap_or_else(|_| "http://127.0.0.1:8080".into()),
         ..AppState::default()
@@ -212,6 +240,18 @@ fn router(state: AppState) -> Router {
         )
         .route("/v1/session", get(session_status))
         .route("/v1/signing-keys", get(signing_keys))
+        .route("/v1/mcp-grants", post(create_grant))
+        .route(
+            "/v1/mcp-grants/{grant_id}",
+            axum::routing::delete(revoke_grant),
+        )
+        .route(
+            "/v1/roles/{role_id}/simulation-controls",
+            post(simulation_controls),
+        )
+        .route("/operator/login", post(operator::login))
+        .route("/operator/status", get(operator::status))
+        .route("/operator/cleanup", post(operator_cleanup))
         .route("/health", get(|| async { "ok" }))
         .route("/ready", get(connection_check))
         .route("/v1/session/new", post(new_session))
@@ -964,12 +1004,108 @@ async fn session_status(headers: HeaderMap) -> Result<Json<serde_json::Value>, S
 }
 
 async fn signing_keys(State(app): State<AppState>) -> Json<serde_json::Value> {
-    let public = hex::encode(app.signing_key.verifying_key().as_bytes());
+    let public = |key: &ed25519_dalek::SigningKey| hex::encode(key.verifying_key().as_bytes());
     Json(serde_json::json!({
-        "purpose": "report",
-        "keys": [{"id": "local-report", "public_key": public, "status": "active"}],
-        "note": "A key fetched from this server is a comparison aid, not independent trust."
+        "keys": [
+            {"id": "report", "purpose": "report", "public_key": public(&app.signing_key), "status": "active"},
+            {"id": "session", "purpose": "session", "public_key": public(&app.session_key), "status": "active"},
+            {"id": "workflow", "purpose": "workflow", "public_key": public(&app.workflow_key), "status": "active"}
+        ],
+        "note": "A key fetched from this server is a comparison aid, not independent trust. Session and workflow public keys are not report trust anchors."
     }))
+}
+
+async fn create_grant(
+    State(app): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    let session_id = session(&headers)?;
+    let (id, token) = mcp::issue_grant(&app, &session_id);
+    Ok(Json(serde_json::json!({
+        "grant_id": id,
+        "token": token,
+        "expires_in": 900,
+        "read_only": true,
+        "note": "Copy this token now. It is not shown again and must be sent as Authorization: Bearer, never in a URL."
+    })))
+}
+
+async fn revoke_grant(
+    State(app): State<AppState>,
+    headers: HeaderMap,
+    Path(grant_id): Path<String>,
+) -> Result<StatusCode, StatusCode> {
+    let session_id = session(&headers)?;
+    let mut grants = app.grants.lock().expect("grants");
+    let Some(grant) = grants.get_mut(&grant_id) else {
+        return Err(StatusCode::NOT_FOUND);
+    };
+    if grant.session_id != session_id {
+        return Err(StatusCode::NOT_FOUND);
+    }
+    grant.revoked = true;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+async fn simulation_controls(
+    headers: HeaderMap,
+    Json(body): Json<serde_json::Value>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    let session_id = session(&headers)?;
+    let url = std::env::var("NORTHWIND_CONTROL_URL")
+        .unwrap_or_else(|_| "http://127.0.0.1:19091/faults".into());
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(3))
+        .build()
+        .map_err(|_| StatusCode::SERVICE_UNAVAILABLE)?;
+    let response = client
+        .post(url)
+        .json(&serde_json::json!({
+            "session_id": session_id,
+            "delay_ms": body.get("delay_ms").cloned().unwrap_or(serde_json::json!(0)),
+            "fail_next": body.get("fail_next").cloned().unwrap_or(serde_json::json!(0)),
+            "drop_ack": body.get("drop_ack").cloned().unwrap_or(serde_json::json!(false)),
+            "duplicate": body.get("duplicate").cloned().unwrap_or(serde_json::json!(false)),
+        }))
+        .send()
+        .await
+        .map_err(|_| StatusCode::SERVICE_UNAVAILABLE)?;
+    if !response.status().is_success() {
+        return Err(StatusCode::SERVICE_UNAVAILABLE);
+    }
+    Ok(Json(
+        serde_json::json!({"synthetic": true, "applied": true}),
+    ))
+}
+
+async fn operator_cleanup(
+    State(app): State<AppState>,
+    headers: HeaderMap,
+    Json(body): Json<serde_json::Value>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    let _status = operator::status(State(app), headers).await?;
+    let now = body
+        .get("now")
+        .and_then(|v| v.as_u64())
+        .unwrap_or_else(security::now);
+    let expires_at = body
+        .get("expires_at")
+        .and_then(|v| v.as_u64())
+        .ok_or(StatusCode::BAD_REQUEST)?;
+    let grace = body
+        .get("grace_seconds")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(86_400);
+    let has_lease = body
+        .get("has_active_lease")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(true);
+    let allowed = janitor::may_purge(now, expires_at, grace, has_lease);
+    Ok(Json(serde_json::json!({
+        "dry_run": true,
+        "would_purge": allowed,
+        "note": "The dry run does not delete events. A live purge is a separate privileged retention operation."
+    })))
 }
 
 fn seal_id(role: &str, generation: i64, root: &str) -> String {
@@ -1440,5 +1576,108 @@ mod contract {
             .as_str()
             .unwrap()
             .contains("R-AFTER-HIRE"));
+    }
+
+    #[tokio::test]
+    async fn read_grant_is_scoped_to_the_issuing_session() {
+        let app = router(AppState::default());
+        let issued = json(
+            app.clone()
+                .oneshot(request("POST", "/v1/mcp-grants", "grant-owner"))
+                .await
+                .unwrap(),
+        )
+        .await;
+        let token = issued["token"].as_str().unwrap();
+        let rpc = |auth: Option<&str>, body: &str| {
+            let mut builder = Request::builder()
+                .method("POST")
+                .uri("/mcp")
+                .header("host", "127.0.0.1:8080")
+                .header("content-type", "application/json")
+                .header("accept", "application/json, text/event-stream")
+                .header("mcp-protocol-version", "2025-11-25");
+            if let Some(auth) = auth {
+                builder = builder.header("authorization", format!("Bearer {auth}"));
+            }
+            builder.body(Body::from(body.to_owned())).unwrap()
+        };
+        let granted_response = app.clone().oneshot(rpc(Some(token), r#"{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"get_role","arguments":{}}}"#)).await.unwrap();
+        let granted_status = granted_response.status();
+        let granted_bytes = granted_response
+            .into_body()
+            .collect()
+            .await
+            .unwrap()
+            .to_bytes();
+        let granted_text = String::from_utf8_lossy(&granted_bytes);
+        assert!(
+            granted_status == StatusCode::OK,
+            "{granted_status} {granted_text}"
+        );
+        let granted: serde_json::Value = serde_json::from_slice(&granted_bytes)
+            .unwrap_or_else(|error| panic!("{error} {granted_text}"));
+        assert!(granted["result"]["content"][0]["text"]
+            .as_str()
+            .unwrap()
+            .contains("\"standard_id\":\"A\""));
+        let guessed = app.clone().oneshot(rpc(Some(token), r#"{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"get_role","arguments":{"session_id":"someone-else"}}}"#)).await.unwrap();
+        let guessed = json(guessed).await;
+        assert!(
+            guessed["error"].is_object() || guessed["result"]["isError"].as_bool() == Some(true)
+        );
+        let revoked = app
+            .clone()
+            .oneshot(request(
+                "DELETE",
+                &format!("/v1/mcp-grants/{}", issued["grant_id"].as_str().unwrap()),
+                "grant-owner",
+            ))
+            .await
+            .unwrap();
+        assert_eq!(revoked.status(), StatusCode::NO_CONTENT);
+        let denied = app.oneshot(rpc(Some(token), r#"{"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"get_role","arguments":{}}}"#)).await.unwrap();
+        assert_eq!(denied.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    #[tokio::test]
+    async fn operator_dev_login_is_rejected_without_a_credential() {
+        let app = router(AppState::default());
+        let missing = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri("/operator/status")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(missing.status(), StatusCode::UNAUTHORIZED);
+        let login = json(
+            app.clone()
+                .oneshot(
+                    Request::builder()
+                        .method("POST")
+                        .uri("/operator/login")
+                        .body(Body::empty())
+                        .unwrap(),
+                )
+                .await
+                .unwrap(),
+        )
+        .await;
+        let cookie = login["cookie"].as_str().unwrap().split(';').next().unwrap();
+        let status = app
+            .oneshot(
+                Request::builder()
+                    .uri("/operator/status")
+                    .header("cookie", cookie)
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(status.status(), StatusCode::OK);
     }
 }

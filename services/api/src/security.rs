@@ -9,6 +9,7 @@ use axum::{
     Json,
 };
 use ed25519_dalek::{Signer, Verifier};
+use http_body_util::BodyExt;
 use rand_core::{OsRng, RngCore};
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -100,7 +101,7 @@ pub async fn protect(
     let mut set_cookie = None;
     if protected {
         let id = match cookie {
-            Some(token) => match inspect(&app.signing_key, &token) {
+            Some(token) => match inspect(&app.session_key, &token) {
                 Some(id) => id,
                 None => {
                     return error(
@@ -122,11 +123,12 @@ pub async fn protect(
                 };
                 set_cookie = Some(format!(
                     "hr_session={}; Path=/; HttpOnly; SameSite=Strict; Max-Age=86400{secure}",
-                    mint(&app.signing_key, &id, now() + 86400)
+                    mint(&app.session_key, &id, now() + 86400)
                 ));
                 id
             }
         };
+        let shared_limiter = app.store.is_some();
         {
             let mut limits = app.request_limits.lock().expect("limits lock");
             limits.retain(|_, (started, _)| now().saturating_sub(*started) < 60);
@@ -149,9 +151,38 @@ pub async fn protect(
                     &request_id,
                 );
             }
-            let entry = limits.entry(id.clone()).or_insert((now(), 0));
-            entry.1 += 1;
-            if entry.1 > 120 {
+            if !shared_limiter {
+                let entry = limits.entry(id.clone()).or_insert((now(), 0));
+                entry.1 += 1;
+                if entry.1 > 120 {
+                    return error(
+                        StatusCode::TOO_MANY_REQUESTS,
+                        "RATE_LIMITED",
+                        "Too many requests. Wait a minute and retry.",
+                        &request_id,
+                    );
+                }
+            }
+        }
+        if shared_limiter {
+            let allowed = match app
+                .store
+                .as_ref()
+                .expect("store")
+                .allow_request(&id, 120)
+                .await
+            {
+                Ok(allowed) => allowed,
+                Err(_) => {
+                    return error(
+                        StatusCode::SERVICE_UNAVAILABLE,
+                        "DEPENDENCY_UNAVAILABLE",
+                        "The shared limiter is unavailable.",
+                        &request_id,
+                    )
+                }
+            };
+            if !allowed {
                 return error(
                     StatusCode::TOO_MANY_REQUESTS,
                     "RATE_LIMITED",
@@ -165,7 +196,43 @@ pub async fn protect(
             HeaderValue::from_str(&id).expect("hex id"),
         );
     }
-    let mut response = next.run(request).await;
+    let mut response = if request.uri().path().starts_with("/mcp") {
+        let bearer = request
+            .headers()
+            .get("authorization")
+            .and_then(|value| value.to_str().ok())
+            .and_then(|value| value.strip_prefix("Bearer "))
+            .map(str::to_owned);
+        if let Some(token) = bearer {
+            let session = match crate::mcp::session_for_token(&app, &token) {
+                Ok(id) => id,
+                Err(()) => {
+                    return error(
+                        StatusCode::UNAUTHORIZED,
+                        "SESSION_EXPIRED",
+                        "Read grant is missing, expired, or revoked.",
+                        &request_id,
+                    )
+                }
+            };
+            let (parts, body) = request.into_parts();
+            let bytes = body
+                .collect()
+                .await
+                .map(|collected| collected.to_bytes())
+                .unwrap_or_default();
+            if let Some(handled) = crate::mcp::authorized_tools_call(&app, &session, &bytes).await {
+                handled
+            } else {
+                next.run(Request::from_parts(parts, Body::from(bytes)))
+                    .await
+            }
+        } else {
+            next.run(request).await
+        }
+    } else {
+        next.run(request).await
+    };
     if let Some(cookie) = set_cookie {
         response.headers_mut().insert(
             "set-cookie",

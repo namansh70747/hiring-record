@@ -406,10 +406,23 @@ impl Store {
         tx.commit().await?;
         Ok(response)
     }
-    pub async fn save_seal(
-        &self,
-        seal: &SealRecord<'_>,
-    ) -> Result<(), StoreError> {
+    pub async fn allow_request(&self, key: &str, limit: i32) -> Result<bool, StoreError> {
+        let hits: i32 = sqlx::query_scalar(
+            "INSERT INTO hr_rate_buckets (bucket_key, window_start, hits, expires_at)
+             VALUES ($1, now(), 1, now() + interval '60 seconds')
+             ON CONFLICT (bucket_key) DO UPDATE SET
+               hits = CASE WHEN hr_rate_buckets.expires_at < now() THEN 1 ELSE hr_rate_buckets.hits + 1 END,
+               window_start = CASE WHEN hr_rate_buckets.expires_at < now() THEN now() ELSE hr_rate_buckets.window_start END,
+               expires_at = CASE WHEN hr_rate_buckets.expires_at < now() THEN now() + interval '60 seconds' ELSE hr_rate_buckets.expires_at END
+             RETURNING hits",
+        )
+        .bind(key)
+        .fetch_one(&self.pool)
+        .await?;
+        Ok(hits <= limit)
+    }
+
+    pub async fn save_seal(&self, seal: &SealRecord<'_>) -> Result<(), StoreError> {
         sqlx::query(
             "INSERT INTO hr_report_seals (seal_id, session_id, role_id, generation, sequence, rules_version, bundle)
              VALUES ($1,$2,$3,$4,$5,$6,$7)
