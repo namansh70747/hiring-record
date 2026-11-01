@@ -82,6 +82,13 @@ fn open_status() -> ProposalStatus {
     ProposalStatus::Open
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Receipt {
+    pub id: String,
+    pub label: String,
+    pub acknowledged: bool,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct State {
     pub role_id: String,
@@ -92,6 +99,11 @@ pub struct State {
     pub assessments: Vec<Assessment>,
     pub interviews: Vec<InterviewBinding>,
     pub proposals: Vec<Proposal>,
+    pub receipts: Vec<Receipt>,
+    pub hold_confirmed: bool,
+    pub support_present: bool,
+    pub quote_declined: bool,
+    pub link_operations: Vec<String>,
     pub events: Vec<Event>,
 }
 
@@ -111,12 +123,20 @@ pub enum Command {
         proposal_id: String,
         new_version_id: String,
     },
+    Acknowledge {
+        receipt_id: String,
+    },
+    ConfirmHold,
+    RemoveSupport,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum EventKind {
     ProposalDismissed,
     StandardApproved,
+    ReceiptAcknowledged,
+    HoldConfirmed,
+    SupportRemoved,
 }
 
 impl EventKind {
@@ -124,6 +144,9 @@ impl EventKind {
         match self {
             EventKind::ProposalDismissed => "proposal_dismissed",
             EventKind::StandardApproved => "standard_approved",
+            EventKind::ReceiptAcknowledged => "receipt_acknowledged",
+            EventKind::HoldConfirmed => "hold_confirmed",
+            EventKind::SupportRemoved => "support_removed",
         }
     }
 }

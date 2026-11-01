@@ -2,17 +2,15 @@ use crate::model::*;
 use crate::{canonical_event, hash_event};
 
 pub fn decide(state: &State, command: Command) -> Result<Event, Rejection> {
-    let proposal = match &command {
-        Command::Dismiss { proposal_id } | Command::Approve { proposal_id, .. } => {
-            state
-                .proposals
-                .iter()
-                .find(|p| p.id == *proposal_id)
-                .ok_or_else(|| Rejection::ProposalMissing(proposal_id.clone()))?
+    if let Command::Dismiss { proposal_id } | Command::Approve { proposal_id, .. } = &command {
+        let proposal = state
+            .proposals
+            .iter()
+            .find(|p| p.id == *proposal_id)
+            .ok_or_else(|| Rejection::ProposalMissing(proposal_id.clone()))?;
+        if proposal.status != ProposalStatus::Open {
+            return Err(Rejection::ProposalNotOpen(proposal.id.clone()));
         }
-    };
-    if proposal.status != ProposalStatus::Open {
-        return Err(Rejection::ProposalNotOpen(proposal.id.clone()));
     }
 
     let (kind, payload) = match command {
@@ -27,6 +25,12 @@ pub fn decide(state: &State, command: Command) -> Result<Event, Rejection> {
             EventKind::StandardApproved,
             format!("proposal={proposal_id};version={new_version_id}"),
         ),
+        Command::Acknowledge { receipt_id } => (
+            EventKind::ReceiptAcknowledged,
+            format!("receipt={receipt_id}"),
+        ),
+        Command::ConfirmHold => (EventKind::HoldConfirmed, "hold=debrief".into()),
+        Command::RemoveSupport => (EventKind::SupportRemoved, "person=mina".into()),
     };
 
     let seq = state.events.len() as u64 + 1;
@@ -77,13 +81,48 @@ pub fn evolve(state: &mut State, event: Event) {
                 .unwrap_or(state.active.effective_at.as_str())
                 .to_string();
             state.active = StandardVersion {
-                id: version_id,
+                id: version_id.clone(),
                 effective_at,
                 criteria,
             };
+            state.receipts.push(Receipt {
+                id: format!("nw-{version_id}"),
+                label: "Northwind stage write".into(),
+                acknowledged: false,
+            });
         }
+        EventKind::ReceiptAcknowledged => {
+            let id = payload_field(&event.payload, "receipt");
+            if let Some(receipt) = state.receipts.iter_mut().find(|r| r.id == id) {
+                receipt.acknowledged = true;
+            }
+        }
+        EventKind::HoldConfirmed => state.hold_confirmed = true,
+        EventKind::SupportRemoved => state.support_present = false,
     }
     state.events.push(event);
+}
+
+pub fn counterfactual_approve(state: &State) -> Result<Report, Rejection> {
+    if state
+        .proposals
+        .iter()
+        .any(|p| p.id == "B" && p.status == ProposalStatus::Approved)
+    {
+        return Ok(crate::evaluate_report(state));
+    }
+    let mut branch = state.clone();
+    if let Some(proposal) = branch.proposals.iter_mut().find(|p| p.id == "B") {
+        proposal.status = ProposalStatus::Open;
+    }
+    apply(
+        &mut branch,
+        Command::Approve {
+            proposal_id: "B".into(),
+            new_version_id: "B2-hypothetical".into(),
+        },
+    )?;
+    Ok(crate::evaluate_report(&branch))
 }
 
 pub fn apply(state: &mut State, command: Command) -> Result<&Event, Rejection> {

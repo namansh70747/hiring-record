@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Hiring Record</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root { --bg:#0b0b0c; --ink:#fafafa; --muted:#a1a1a6; --line:rgba(255,255,255,.09); --accent:#ec754a; --paper:#fff; --body:#0a2540; --stale:#8a5a12; --no:#9f2d2d; --yes:#1d6b45; }
+* { box-sizing: border-box; }
+body { margin:0; font-family: Inter, system-ui, sans-serif; background: var(--paper); color: var(--body); }
+header { background: var(--bg); color: var(--ink); border-bottom: 1px solid var(--line); }
+.bar { max-width: 1120px; margin: 0 auto; padding: 18px 24px; display: flex; justify-content: space-between; align-items: center; }
+.word { font-weight: 600; letter-spacing: -.02em; }
+a.jump { color: var(--ink); text-decoration: none; border: 1px solid var(--line); padding: 8px 12px; border-radius: 999px; font-size: 14px; }
+.hero { background: var(--bg); color: var(--ink); padding: 72px 24px 64px; }
+.hero-inner { max-width: 1120px; margin: 0 auto; }
+.kicker { font-family: "IBM Plex Mono", monospace; font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+h1 { font-size: clamp(40px, 6vw, 72px); line-height: .95; font-weight: 560; letter-spacing: -.03em; margin: 12px 0; }
+h1 span { display: block; color: var(--accent); }
+.lede { max-width: 640px; color: #d7d7dc; font-size: 18px; }
+.horizon { margin-top: 36px; height: 88px; }
+main { max-width: 1120px; margin: 0 auto; padding: 28px 24px 80px; }
+.panels { display: grid; grid-template-columns: 1fr 1fr 1.1fr; gap: 16px; }
+@media (max-width: 900px) { .panels { grid-template-columns: 1fr; } }
+section.card { border: 1px solid #e6e4df; border-radius: 12px; padding: 16px; background: #fff; min-height: 280px; }
+h2 { font-size: 15px; margin: 0 0 12px; }
+.person, .criterion, .claim { padding: 8px 0; border-top: 1px solid #eee; font-size: 14px; }
+.meta { font-family: "IBM Plex Mono", monospace; font-size: 12px; color: #5c6b7a; }
+.stale { color: var(--stale); }
+.refused { color: var(--no); }
+.ok { color: var(--yes); }
+.actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 16px 0; }
+button { font: inherit; background: var(--bg); color: var(--ink); border: 0; border-radius: 999px; padding: 10px 14px; cursor: pointer; }
+button.ghost { background: #fff; color: var(--body); border: 1px solid #ddd; }
+button:disabled { opacity: .45; cursor: default; }
+pre { font-family: "IBM Plex Mono", monospace; font-size: 12px; white-space: pre-wrap; background: #f6f5f2; padding: 12px; border-radius: 8px; }
+.note { font-size: 13px; color: #5c6b7a; }
+</style>
+</head>
+<body>
+<header>
+  <div class="bar">
+    <div class="word">Hiring Record</div>
+    <a class="jump" href="#record">Open the record</a>
+  </div>
+</header>
+<section class="hero">
+  <div class="hero-inner">
+    <div class="kicker">Synthetic workspace · September role</div>
+    <h1>The standard changes.<span>The report has to say so.</span></h1>
+    <p class="lede">Dismiss leaves Iris, Noel, and Priya on the standard they were scored against. Approve makes those assessments stale. The naive 3 of 3 stays visible, and predicted is refused when the rule fails.</p>
+    <svg class="horizon" viewBox="0 0 800 88" aria-hidden="true">
+      <path d="M40 70 A360 360 0 0 1 400 18" fill="none" stroke="#ec754a" stroke-width="1.5"/>
+      <path d="M760 70 A360 360 0 0 0 400 18" fill="none" stroke="#9fc0ff" stroke-width="1.5"/>
+      <circle cx="400" cy="18" r="3" fill="#fff"/>
+    </svg>
+  </div>
+</section>
+<main id="record">
+  <div class="actions">
+    <button id="dismiss" type="button">Dismiss proposal</button>
+    <button id="approve" type="button">Approve proposal</button>
+    <button id="ack" class="ghost" type="button">Acknowledge Northwind</button>
+    <button id="hypo" class="ghost" type="button">Hypothetical branch</button>
+    <button id="reset" class="ghost" type="button">Reset fixture</button>
+  </div>
+  <p class="note" id="status">Loading the synthetic role.</p>
+  <div class="panels">
+    <section class="card"><h2>People</h2><div id="people"></div></section>
+    <section class="card"><h2>Hiring standard</h2><div id="standard"></div></section>
+    <section class="card"><h2>Report</h2><div id="report"></div></section>
+  </div>
+  <section class="card" style="margin-top:16px">
+    <h2>Action lane</h2>
+    <div id="lane"></div>
+  </section>
+  <section class="card" style="margin-top:16px">
+    <h2>Hypothetical branch</h2>
+    <p class="note">This branch is not written to the live record.</p>
+    <pre id="hypo-out">Not run.</pre>
+  </section>
+</main>
+<script>
+const status = document.getElementById("status");
+async function view() {
+  const res = await fetch("/v1/roles/sept/view");
+  const data = await res.json();
+  draw(data);
+}
+function draw(data) {
+  status.textContent = data.banner;
+  document.getElementById("people").innerHTML = data.people.map(p =>
+    `<div class="person"><strong>${p.name}</strong> <span class="meta">${p.place}</span><div class="meta ${p.stale ? "stale" : ""}">${p.assessment}</div></div>`
+  ).join("");
+  const preview = data.preview ? `<p class="note">Approving would stale ${data.preview.assessments_that_would_become_stale} assessments and leave ${data.preview.interviews_bound_to_earlier_rubric} interview on its current rubric. Adds: ${data.preview.criteria_added.join(", ")}.</p>` : "";
+  document.getElementById("standard").innerHTML = `<div class="meta">Active ${data.standard_id}</div>` + preview +
+    data.criteria.map(c => `<div class="criterion">${c.text}<div class="meta">added ${c.added_at} by ${c.added_by}</div></div>`).join("") +
+    `<div class="criterion"><span class="meta">Priya interview rubric ${data.rubric}</span></div>`;
+  document.getElementById("report").innerHTML = data.report.lines.map(l =>
+    `<div class="claim"><strong>${l.text}</strong> <span class="meta">${l.naive}</span><div class="${l.eligible ? "ok" : "refused"}">${l.eligible ? "eligible" : (l.refusal || "refused")}</div><div class="note">${l.reason}</div></div>`
+  ).join("");
+  document.getElementById("lane").innerHTML = data.receipts.map(r =>
+    `<div class="person">${r.label} <span class="meta">${r.acknowledged ? "acknowledged" : "pending"}</span></div>`
+  ).join("") || `<div class="note">No receipt yet. Approve opens one. It stays pending until Northwind acknowledges it. Synced stays refused because Northwind has no push operation.</div>`;
+  document.getElementById("dismiss").disabled = data.proposal_status !== "open";
+  document.getElementById("approve").disabled = data.proposal_status !== "open";
+}
+async function post(url) {
+  await fetch(url, { method: "POST" });
+  await view();
+}
+document.getElementById("dismiss").onclick = () => post("/v1/roles/sept/proposals/B/dismiss");
+document.getElementById("approve").onclick = () => post("/v1/roles/sept/proposals/B/approve");
+document.getElementById("ack").onclick = () => post("/v1/receipts/nw-B2/ack");
+document.getElementById("reset").onclick = () => post("/v1/roles/sept/reset");
+document.getElementById("hypo").onclick = async () => {
+  const res = await fetch("/v1/roles/sept/counterfactual");
+  const report = await res.json();
+  const lines = report.lines.filter(l => ["led_a_launch","still_hands_on","built_from_zero"].includes(l.criterion_id));
+  document.getElementById("hypo-out").textContent = lines.map(l => `${l.text}: ${l.naive}  ${l.eligible ? "eligible" : l.refusal}`).join("\n");
+  await view();
+};
+view();
+</script>
+</body>
+</html>

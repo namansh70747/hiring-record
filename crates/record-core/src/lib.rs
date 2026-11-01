@@ -7,7 +7,7 @@ mod engine;
 mod model;
 mod report;
 
-pub use engine::{apply, decide, evolve, preview_change};
+pub use engine::{apply, counterfactual_approve, decide, evolve, preview_change};
 pub use model::*;
 pub use report::evaluate_report;
 
@@ -41,6 +41,11 @@ pub fn state_from_fixture(fixture: &Fixture) -> State {
         assessments: fixture.assessments.clone(),
         interviews: fixture.interviews.clone(),
         proposals: vec![fixture.proposal.clone()],
+        receipts: vec![],
+        hold_confirmed: false,
+        support_present: true,
+        quote_declined: false,
+        link_operations: vec![],
         events: vec![],
     }
 }

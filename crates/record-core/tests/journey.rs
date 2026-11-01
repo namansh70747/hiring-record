@@ -141,6 +141,51 @@ fn second_approve_is_rejected() {
 }
 
 #[test]
+fn acknowledgement_stays_pending_until_the_receipt_is_acked() {
+    let mut state = opened();
+    apply(
+        &mut state,
+        Command::Approve {
+            proposal_id: "B".into(),
+            new_version_id: "B2".into(),
+        },
+    )
+    .unwrap();
+    let pending = evaluate_report(&state);
+    let ack = pending.lines.iter().find(|l| l.criterion_id == "op-ack").unwrap();
+    assert_eq!(ack.refusal, Some(RefusalCode::RNoAck));
+    apply(
+        &mut state,
+        Command::Acknowledge {
+            receipt_id: "nw-B2".into(),
+        },
+    )
+    .unwrap();
+    let done = evaluate_report(&state);
+    let ack = done.lines.iter().find(|l| l.criterion_id == "op-ack").unwrap();
+    assert!(ack.eligible);
+    let synced = done.lines.iter().find(|l| l.criterion_id == "op-sync").unwrap();
+    assert_eq!(synced.refusal, Some(RefusalCode::RNoOp));
+}
+
+#[test]
+fn counterfactual_does_not_change_the_live_record() {
+    let mut state = opened();
+    apply(
+        &mut state,
+        Command::Dismiss {
+            proposal_id: "B".into(),
+        },
+    )
+    .unwrap();
+    let events = state.events.len();
+    let hypothetical = record_core::counterfactual_approve(&state).unwrap();
+    assert_eq!(state.events.len(), events);
+    assert_eq!(state.active.id, "A");
+    assert!(hypothetical.lines.iter().any(|l| l.criterion_id == "led_a_launch" && !l.eligible));
+}
+
+#[test]
 fn event_hash_repeats() {
     let mut state = opened();
     apply(

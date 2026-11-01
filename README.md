@@ -10,7 +10,7 @@ cargo run -p record-cli -- play
 cargo run -p record-api
 ```
 
-The API listens on `127.0.0.1:8080`.
+The API listens on `127.0.0.1:8080` and serves the record screen at `/`.
 
 ```text
 POST /v1/roles/sept/proposals/B/dismiss
