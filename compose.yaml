@@ -1,0 +1,18 @@
+services:
+  postgres:
+    image: postgres:18
+    environment:
+      POSTGRES_USER: hiring_record
+      POSTGRES_PASSWORD: local_demo_only
+      POSTGRES_DB: hiring_record
+    ports:
+      - '127.0.0.1:55432:5432'
+    volumes:
+      - hiring_record_pg:/var/lib/postgresql
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U hiring_record -d hiring_record']
+      interval: 2s
+      timeout: 3s
+      retries: 30
+volumes:
+  hiring_record_pg:

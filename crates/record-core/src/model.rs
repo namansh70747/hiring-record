@@ -55,6 +55,15 @@ pub struct Assessment {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SourceMoment {
+    pub id: String,
+    pub person: String,
+    pub kind: String,
+    pub timestamp: String,
+    pub quote: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct InterviewBinding {
     pub person: String,
     pub rubric_version: String,
@@ -97,6 +106,7 @@ pub struct State {
     pub decisions: Vec<Decision>,
     pub evidence: Vec<Evidence>,
     pub assessments: Vec<Assessment>,
+    pub sources: Vec<SourceMoment>,
     pub interviews: Vec<InterviewBinding>,
     pub proposals: Vec<Proposal>,
     pub receipts: Vec<Receipt>,
@@ -166,6 +176,10 @@ pub enum Rejection {
     ProposalNotOpen(String),
     #[error("proposal {0} was not found")]
     ProposalMissing(String),
+    #[error("receipt {0} was not found or is already acknowledged")]
+    ReceiptUnavailable(String),
+    #[error("this action has already been recorded")]
+    AlreadyRecorded,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -179,17 +193,31 @@ pub struct ImpactPreview {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum RefusalCode {
     /// Added after the hires being explained. Cannot be reported as predicted.
+    #[serde(rename = "R-AFTER-HIRE", alias = "RAfterHire")]
     RAfterHire,
     /// Met by every reject in the decision set. Cannot be reported as predicted.
+    #[serde(rename = "R-REJECTS-MET", alias = "RRejectsMet")]
     RRejectsMet,
+    #[serde(rename = "R-SUPPORT-GONE", alias = "RSupportGone")]
     RSupportGone,
+    #[serde(rename = "R-STALE", alias = "RStale")]
     RStale,
+    #[serde(rename = "R-RUBRIC-OLD", alias = "RRubricOld")]
     RRubricOld,
+    #[serde(rename = "R-UNCITED", alias = "RUncited")]
     RUncited,
+    #[serde(rename = "R-NO-ACK", alias = "RNoAck")]
     RNoAck,
+    #[serde(rename = "R-NO-OP", alias = "RNoOp")]
     RNoOp,
+    #[serde(rename = "R-DECLINED", alias = "RDeclined")]
     RDeclined,
+    #[serde(rename = "R-UNCONFIRMED", alias = "RUnconfirmed")]
     RUnconfirmed,
+    #[serde(rename = "R-INSUFFICIENT-DATA", alias = "RInsufficientData")]
+    RInsufficientData,
+    #[serde(rename = "R-INCOMPLETE-EVIDENCE", alias = "RIncompleteEvidence")]
+    RIncompleteEvidence,
 }
 
 impl RefusalCode {
@@ -205,6 +233,8 @@ impl RefusalCode {
             RefusalCode::RNoOp => "R-NO-OP",
             RefusalCode::RDeclined => "R-DECLINED",
             RefusalCode::RUnconfirmed => "R-UNCONFIRMED",
+            RefusalCode::RInsufficientData => "R-INSUFFICIENT-DATA",
+            RefusalCode::RIncompleteEvidence => "R-INCOMPLETE-EVIDENCE",
         }
     }
 }

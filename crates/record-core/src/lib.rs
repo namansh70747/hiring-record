@@ -3,13 +3,17 @@
 
 #![forbid(unsafe_code)]
 
+mod bundle;
 mod engine;
 mod model;
 mod report;
+mod simulation;
 
+pub use bundle::{create_bundle, verify_bundle, Bundle, BundlePayload, Verification};
 pub use engine::{apply, counterfactual_approve, decide, evolve, preview_change};
 pub use model::*;
 pub use report::evaluate_report;
+pub use simulation::{simulate, SimulationResult, SimulationStep};
 
 use serde::Deserialize;
 use std::path::Path;
@@ -22,6 +26,8 @@ pub struct Fixture {
     pub decisions: Vec<Decision>,
     pub evidence: Vec<Evidence>,
     pub assessments: Vec<Assessment>,
+    #[serde(default)]
+    pub sources: Vec<SourceMoment>,
     pub interviews: Vec<InterviewBinding>,
     pub proposal: Proposal,
 }
@@ -39,6 +45,7 @@ pub fn state_from_fixture(fixture: &Fixture) -> State {
         decisions: fixture.decisions.clone(),
         evidence: fixture.evidence.clone(),
         assessments: fixture.assessments.clone(),
+        sources: fixture.sources.clone(),
         interviews: fixture.interviews.clone(),
         proposals: vec![fixture.proposal.clone()],
         receipts: vec![],

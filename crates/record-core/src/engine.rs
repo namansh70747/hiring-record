@@ -2,6 +2,19 @@ use crate::model::*;
 use crate::{canonical_event, hash_event};
 
 pub fn decide(state: &State, command: Command) -> Result<Event, Rejection> {
+    match &command {
+        Command::Acknowledge { receipt_id }
+            if !state
+                .receipts
+                .iter()
+                .any(|r| r.id == *receipt_id && !r.acknowledged) =>
+        {
+            return Err(Rejection::ReceiptUnavailable(receipt_id.clone()));
+        }
+        Command::ConfirmHold if state.hold_confirmed => return Err(Rejection::AlreadyRecorded),
+        Command::RemoveSupport if !state.support_present => return Err(Rejection::AlreadyRecorded),
+        _ => {}
+    }
     if let Command::Dismiss { proposal_id } | Command::Approve { proposal_id, .. } = &command {
         let proposal = state
             .proposals

@@ -40,19 +40,38 @@ fn claim_line(
     let hires_total = hires.len();
     let naive = format!("{hires_met} of {hires_total} hires");
 
-    let added_after_hires = !hires.is_empty()
-        && hires.iter().all(|d| criterion.added_at.as_str() > d.at.as_str());
-    let every_reject_met = !rejects.is_empty()
-        && rejects.iter().all(|d| met(state, &d.person, &criterion.id));
+    let added_after_hires = hires
+        .iter()
+        .any(|d| criterion.added_at.as_str() > d.at.as_str());
+    let missing_evidence = hires.iter().chain(rejects.iter()).any(|d| {
+        !state
+            .evidence
+            .iter()
+            .any(|e| e.person == d.person && e.criterion == criterion.id)
+    });
+    let every_reject_met =
+        !rejects.is_empty() && rejects.iter().all(|d| met(state, &d.person, &criterion.id));
 
     let (eligible, refusal, reason) = if added_after_hires {
         (
             false,
             Some(RefusalCode::RAfterHire),
             format!(
-                "{} was added {}, after those hires. The count stays. It cannot be reported as predicted.",
+                "{} was added {}, after at least one of those hires. The count stays. It cannot be reported as predicted.",
                 criterion.text, criterion.added_at
             ),
+        )
+    } else if hires.is_empty() || rejects.is_empty() {
+        (
+            false,
+            Some(RefusalCode::RInsufficientData),
+            "A prediction comparison requires both hires and rejects in the decision set.".into(),
+        )
+    } else if missing_evidence {
+        (
+            false,
+            Some(RefusalCode::RIncompleteEvidence),
+            "Evidence is missing for at least one decision. Missing information is not evidence that a criterion was not met.".into(),
         )
     } else if every_reject_met {
         (
@@ -98,8 +117,18 @@ fn claim_line(
 fn operation_lines(state: &State) -> Vec<ClaimLine> {
     let total = state.receipts.len();
     let acked = state.receipts.iter().filter(|r| r.acknowledged).count();
-    let (ack_ok, ack_code, ack_reason) = if total > 0 && acked == total {
-        (true, None, "Every receipt in this batch has an acknowledgement.".into())
+    let (ack_ok, ack_code, ack_reason) = if total == 0 {
+        (
+            false,
+            Some(RefusalCode::RNoAck),
+            "No receipt has been created, so there is no acknowledgement to report.".into(),
+        )
+    } else if acked == total {
+        (
+            true,
+            None,
+            "Every receipt in this batch has an acknowledgement.".into(),
+        )
     } else {
         (
             false,
@@ -107,45 +136,114 @@ fn operation_lines(state: &State) -> Vec<ClaimLine> {
             "A receipt is still unacknowledged. The operation stays pending.".into(),
         )
     };
-    let stale = state.assessments.iter().filter(|a| state.is_stale(a)).count();
+    let stale = state
+        .assessments
+        .iter()
+        .filter(|a| state.is_stale(a))
+        .count();
     let (stale_ok, stale_code, stale_reason) = if stale == 0 {
         (true, None, "Assessments match the active standard.".into())
     } else {
         (
             false,
             Some(RefusalCode::RStale),
-            format!("{stale} assessments still cite an older standard and cannot be read as current."),
+            format!(
+                "{stale} assessments still cite an older standard and cannot be read as current."
+            ),
         )
     };
-    let rubric_old = state.interviews.iter().any(|i| i.rubric_version != state.active.id);
-    let uncited = state.assessments.iter().any(|a| a.citation.is_none());
+    let rubric_old = state
+        .interviews
+        .iter()
+        .any(|i| i.rubric_version != state.active.id);
+    let uncited = state.assessments.iter().any(|assessment| {
+        !assessment.citation.as_ref().is_some_and(|id| {
+            state
+                .sources
+                .iter()
+                .any(|source| source.id == *id && source.person == assessment.person)
+        })
+    });
     let mut lines = vec![
-        line("op-ack", "Acknowledged by Northwind", &format!("{acked} of {total} receipts"), ack_ok, ack_code, ack_reason),
-        line("op-sync", "Synced to Northwind", "0 operations", false, Some(RefusalCode::RNoOp), "Northwind declares no push operation, so this cannot be reported as synced.".into()),
+        line(
+            "op-ack",
+            "Acknowledged by Northwind",
+            &format!("{acked} of {total} receipts"),
+            ack_ok,
+            ack_code,
+            ack_reason,
+        ),
+        line(
+            "op-sync",
+            "Synced to Northwind",
+            "0 operations",
+            false,
+            Some(RefusalCode::RNoOp),
+            "Northwind declares no push operation, so this cannot be reported as synced.".into(),
+        ),
         line(
             "op-hold",
             "Debrief booked",
-            if state.hold_confirmed { "confirmed" } else { "1 hold" },
+            if state.hold_confirmed {
+                "confirmed"
+            } else {
+                "1 hold"
+            },
             state.hold_confirmed,
-            if state.hold_confirmed { None } else { Some(RefusalCode::RUnconfirmed) },
-            if state.hold_confirmed { "A person confirmed the hold.".into() } else { "The hold has no confirmation, so it is not a booking.".into() },
+            if state.hold_confirmed {
+                None
+            } else {
+                Some(RefusalCode::RUnconfirmed)
+            },
+            if state.hold_confirmed {
+                "A person confirmed the hold.".into()
+            } else {
+                "The hold has no confirmation, so it is not a booking.".into()
+            },
         ),
-        line("op-stale", "Assessments current", &format!("{stale} stale"), stale_ok, stale_code, stale_reason),
+        line(
+            "op-stale",
+            "Assessments current",
+            &format!("{stale} stale"),
+            stale_ok,
+            stale_code,
+            stale_reason,
+        ),
         line(
             "op-rubric",
             "Interview on the active standard",
-            if rubric_old { "bound earlier" } else { "bound to active" },
+            if rubric_old {
+                "bound earlier"
+            } else {
+                "bound to active"
+            },
             !rubric_old,
-            if rubric_old { Some(RefusalCode::RRubricOld) } else { None },
-            if rubric_old { "The open interview keeps the rubric it started on.".into() } else { "The interview rubric matches the active standard.".into() },
+            if rubric_old {
+                Some(RefusalCode::RRubricOld)
+            } else {
+                None
+            },
+            if rubric_old {
+                "The open interview keeps the rubric it started on.".into()
+            } else {
+                "The interview rubric matches the active standard.".into()
+            },
         ),
         line(
             "op-cite",
             "Scores cite a source moment",
             if uncited { "missing" } else { "cited" },
             !uncited,
-            if uncited { Some(RefusalCode::RUncited) } else { None },
-            if uncited { "A score cites a moment that is not in the record.".into() } else { "Every assessment on this role cites a source.".into() },
+            if uncited {
+                Some(RefusalCode::RUncited)
+            } else {
+                None
+            },
+            if uncited {
+                "At least one assessment has no matching source moment for that person.".into()
+            } else {
+                "Each assessment references a matching synthetic source moment. This check does not establish whether the interpretation is correct.".into()
+            },
         ),
     ];
     if state.quote_declined {
