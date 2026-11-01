@@ -21,6 +21,10 @@
           "person": {
             "type": "string"
           },
+          "unknown": {
+            "description": "Unknown is not a recorded “not met”. Omitted on legacy assessments.",
+            "type": "boolean"
+          },
           "version": {
             "type": "string"
           }
@@ -63,6 +67,12 @@
       },
       "ClaimLine": {
         "properties": {
+          "all_refusals": {
+            "items": {
+              "$ref": "#/components/schemas/RefusalCode"
+            },
+            "type": "array"
+          },
           "criterion_id": {
             "type": "string"
           },
@@ -95,6 +105,10 @@
           },
           "text": {
             "type": "string"
+          },
+          "unknown_count": {
+            "minimum": 0,
+            "type": "integer"
           }
         },
         "required": [
@@ -331,6 +345,70 @@
             "type": "object"
           },
           {
+            "description": "Source and assessment commit together. A retry cannot create a second source.",
+            "properties": {
+              "assessment": {
+                "$ref": "#/components/schemas/Assessment"
+              },
+              "source": {
+                "$ref": "#/components/schemas/SourceMoment"
+              },
+              "type": {
+                "enum": [
+                  "record_source_and_assessment"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "source",
+              "assessment",
+              "type"
+            ],
+            "type": "object"
+          },
+          {
+            "properties": {
+              "supporter_id": {
+                "type": "string"
+              },
+              "type": {
+                "enum": [
+                  "remove_supporter"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "supporter_id",
+              "type"
+            ],
+            "type": "object"
+          },
+          {
+            "description": "One observed acknowledgement. Duplicates of the same id are rejected without a new effect.",
+            "properties": {
+              "acknowledgement_id": {
+                "type": "string"
+              },
+              "receipt_id": {
+                "type": "string"
+              },
+              "type": {
+                "enum": [
+                  "record_acknowledgement"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "receipt_id",
+              "acknowledgement_id",
+              "type"
+            ],
+            "type": "object"
+          },
+          {
             "properties": {
               "proposal_id": {
                 "type": "string"
@@ -549,6 +627,17 @@
       },
       "Event": {
         "properties": {
+          "envelope": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/EventEnvelope",
+                "description": "Provenance is outside the v1 hash. Legacy events omit it."
+              }
+            ]
+          },
           "hash": {
             "type": "string"
           },
@@ -573,6 +662,37 @@
           "payload",
           "prev_hash",
           "hash"
+        ],
+        "type": "object"
+      },
+      "EventEnvelope": {
+        "properties": {
+          "actor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "command_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "recorded_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "schema_version": {
+            "format": "int32",
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "schema_version"
         ],
         "type": "object"
       },
@@ -603,6 +723,25 @@
           "person",
           "criterion",
           "met"
+        ],
+        "type": "object"
+      },
+      "Hold": {
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "label",
+          "status"
         ],
         "type": "object"
       },
@@ -820,11 +959,28 @@
           "acknowledged": {
             "type": "boolean"
           },
+          "acknowledgement_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "expected_acks": {
+            "description": "Zero means the legacy single-acknowledgement receipt.",
+            "format": "int32",
+            "minimum": 0,
+            "type": "integer"
+          },
           "id": {
             "type": "string"
           },
           "label": {
             "type": "string"
+          },
+          "observed_acks": {
+            "format": "int32",
+            "minimum": 0,
+            "type": "integer"
           }
         },
         "required": [
@@ -1056,6 +1212,13 @@
             },
             "type": "array"
           },
+          "baseline_digest": {
+            "description": "Blake3 of the immutable replay baseline. Empty until the baseline is sealed.",
+            "type": "string"
+          },
+          "baseline_schema": {
+            "type": "string"
+          },
           "decisions": {
             "items": {
               "$ref": "#/components/schemas/Decision"
@@ -1086,6 +1249,12 @@
           "hold_pending": {
             "type": "boolean"
           },
+          "holds": {
+            "items": {
+              "$ref": "#/components/schemas/Hold"
+            },
+            "type": "array"
+          },
           "interviews": {
             "items": {
               "$ref": "#/components/schemas/InterviewBinding"
@@ -1097,6 +1266,10 @@
               "type": "string"
             },
             "type": "array"
+          },
+          "opening_json": {
+            "description": "Exact baseline state, without a nested copy of itself, used for replay.",
+            "type": "string"
           },
           "overrides": {
             "items": {
@@ -1131,7 +1304,16 @@
             },
             "type": "array"
           },
+          "removed_supporters": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
           "role_id": {
+            "type": "string"
+          },
+          "rules_version": {
             "type": "string"
           },
           "sources": {

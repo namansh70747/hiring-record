@@ -384,6 +384,8 @@ export interface components {
             id: string;
             met: boolean;
             person: string;
+            /** @description Unknown is not a recorded “not met”. Omitted on legacy assessments. */
+            unknown?: boolean;
             version: string;
         };
         Bundle: {
@@ -394,6 +396,7 @@ export interface components {
             signature: string;
         };
         ClaimLine: {
+            all_refusals?: components["schemas"]["RefusalCode"][];
             criterion_id: string;
             eligible: boolean;
             hires_met: number;
@@ -402,6 +405,7 @@ export interface components {
             reason: string;
             refusal?: null | components["schemas"]["RefusalCode"];
             text: string;
+            unknown_count?: number;
         };
         Command: {
             role_id: string;
@@ -452,6 +456,20 @@ export interface components {
             quote_id: string;
             /** @enum {string} */
             type: "decline_quote";
+        } | {
+            assessment: components["schemas"]["Assessment"];
+            source: components["schemas"]["SourceMoment"];
+            /** @enum {string} */
+            type: "record_source_and_assessment";
+        } | {
+            supporter_id: string;
+            /** @enum {string} */
+            type: "remove_supporter";
+        } | {
+            acknowledgement_id: string;
+            receipt_id: string;
+            /** @enum {string} */
+            type: "record_acknowledgement";
         } | {
             proposal_id: string;
             /** @enum {string} */
@@ -505,6 +523,7 @@ export interface components {
             reason: string;
         };
         Event: {
+            envelope?: null | components["schemas"]["EventEnvelope"];
             hash: string;
             kind: components["schemas"]["EventKind"];
             payload: string;
@@ -512,12 +531,24 @@ export interface components {
             /** Format: int64 */
             seq: number;
         };
+        EventEnvelope: {
+            actor?: string | null;
+            command_id?: string | null;
+            recorded_at?: string | null;
+            /** Format: int32 */
+            schema_version: number;
+        };
         /** @enum {string} */
         EventKind: "DomainCommandV2" | "ProposalDismissed" | "StandardApproved" | "ReceiptAcknowledged" | "HoldConfirmed" | "SupportRemoved";
         Evidence: {
             criterion: string;
             met: boolean;
             person: string;
+        };
+        Hold: {
+            id: string;
+            label: string;
+            status: string;
         };
         ImpactPreview: {
             assessments_that_would_become_stale: number;
@@ -567,8 +598,16 @@ export interface components {
         };
         Receipt: {
             acknowledged: boolean;
+            acknowledgement_ids?: string[];
+            /**
+             * Format: int32
+             * @description Zero means the legacy single-acknowledgement receipt.
+             */
+            expected_acks?: number;
             id: string;
             label: string;
+            /** Format: int32 */
+            observed_acks?: number;
         };
         /** @enum {string} */
         RefusalCode: "R-AFTER-HIRE" | "R-REJECTS-MET" | "R-SUPPORT-GONE" | "R-STALE" | "R-RUBRIC-OLD" | "R-UNCITED" | "R-NO-ACK" | "R-NO-OP" | "R-DECLINED" | "R-UNCONFIRMED" | "R-INSUFFICIENT-DATA" | "R-INCOMPLETE-EVIDENCE";
@@ -620,21 +659,29 @@ export interface components {
         State: {
             active: components["schemas"]["StandardVersion"];
             assessments: components["schemas"]["Assessment"][];
+            /** @description Blake3 of the immutable replay baseline. Empty until the baseline is sealed. */
+            baseline_digest?: string;
+            baseline_schema?: string;
             decisions: components["schemas"]["Decision"][];
             events: components["schemas"]["Event"][];
             evidence: components["schemas"]["Evidence"][];
             facts?: components["schemas"]["SourcedFact"][];
             hold_confirmed: boolean;
             hold_pending?: boolean;
+            holds?: components["schemas"]["Hold"][];
             interviews: components["schemas"]["InterviewBinding"][];
             link_operations: string[];
+            /** @description Exact baseline state, without a nested copy of itself, used for replay. */
+            opening_json?: string;
             overrides?: components["schemas"]["DecisionOverride"][];
             people: components["schemas"]["Person"][];
             proposals: components["schemas"]["Proposal"][];
             quote_declined: boolean;
             quotes?: components["schemas"]["Quote"][];
             receipts: components["schemas"]["Receipt"][];
+            removed_supporters?: string[];
             role_id: string;
+            rules_version?: string;
             sources: components["schemas"]["SourceMoment"][];
             support_present: boolean;
         };
