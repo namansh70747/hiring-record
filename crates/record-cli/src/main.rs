@@ -20,11 +20,174 @@ fn main() -> ExitCode {
                 }
             }
         }
+        Some("verify") => {
+            let Some(path) = args.next() else {
+                eprintln!("usage: record verify <bundle.json> [--trust-key <hex-public-key>]");
+                return ExitCode::from(2);
+            };
+            let remaining: Vec<_> = args.collect();
+            let trusted = match remaining.as_slice() {
+                [] => None,
+                [flag, key] if flag == "--trust-key" => Some(key.as_str()),
+                _ => {
+                    eprintln!("usage: record verify <bundle.json> [--trust-key <hex-public-key>]");
+                    return ExitCode::from(2);
+                }
+            };
+            match verify(&path, trusted) {
+                Ok(true) => ExitCode::SUCCESS,
+                Ok(false) => ExitCode::from(1),
+                Err(err) => {
+                    eprintln!("verification failed: {err}");
+                    ExitCode::from(1)
+                }
+            }
+        }
+        Some("simulate-json") => {
+            let seed = args.next().unwrap_or_else(|| "42".into()).parse::<u64>();
+            match seed {
+                Ok(seed) => match record_core::load_fixture(&record_core::fixture_path()).and_then(
+                    |fixture| {
+                        record_core::simulate(&record_core::state_from_fixture(&fixture), seed, 20)
+                    },
+                ) {
+                    Ok(result) => {
+                        println!(
+                            "{}",
+                            serde_json::to_string(&result).expect("simulation JSON")
+                        );
+                        ExitCode::SUCCESS
+                    }
+                    Err(error) => {
+                        eprintln!("{error}");
+                        ExitCode::from(1)
+                    }
+                },
+                Err(_) => {
+                    eprintln!("usage: record simulate-json [seed]");
+                    ExitCode::from(2)
+                }
+            }
+        }
+        Some("sweep") => {
+            let seeds = args.next().unwrap_or_else(|| "10000".into()).parse::<u64>();
+            let rounds = args.next().unwrap_or_else(|| "1".into()).parse::<usize>();
+            match (seeds, rounds) {
+                (Ok(seeds), Ok(rounds))
+                    if (1..=1_000_000).contains(&seeds) && (1..=100).contains(&rounds) =>
+                {
+                    let result = record_core::load_fixture(&record_core::fixture_path()).and_then(|fixture| {
+                        let initial = record_core::state_from_fixture(&fixture);
+                        let mut checks = 0;
+                        for seed in 0..seeds {
+                            let result = record_core::simulate(&initial, seed, rounds)?;
+                            checks += result.checks;
+                            if !result.failures.is_empty() { return Err(format!("seed {seed}: {:?}", result.failures)); }
+                        }
+                        println!("PASS: {seeds} seeds, {rounds} rounds each, {checks} invariant checks");
+                        Ok(())
+                    });
+                    match result {
+                        Ok(()) => ExitCode::SUCCESS,
+                        Err(error) => {
+                            eprintln!("{error}");
+                            ExitCode::from(1)
+                        }
+                    }
+                }
+                _ => {
+                    eprintln!("usage: record sweep [seeds 1..1000000] [rounds 1..100]");
+                    ExitCode::from(2)
+                }
+            }
+        }
+        Some("simulate") => {
+            let seed = args.next().unwrap_or_else(|| "42".into()).parse::<u64>();
+            let rounds = args.next().unwrap_or_else(|| "100".into()).parse::<usize>();
+            match (seed, rounds) {
+                (Ok(seed), Ok(rounds)) => match run_simulation(seed, rounds) {
+                    Ok(true) => ExitCode::SUCCESS,
+                    Ok(false) => ExitCode::from(1),
+                    Err(error) => {
+                        eprintln!("simulation failed: {error}");
+                        ExitCode::from(1)
+                    }
+                },
+                _ => {
+                    eprintln!("usage: record simulate [seed] [rounds]");
+                    ExitCode::from(2)
+                }
+            }
+        }
         _ => {
-            eprintln!("usage: record play [fixtures/role.json]");
+            eprintln!("usage: record play [fixture] | record simulate [seed] [rounds] | record verify <bundle.json> [--trust-key <hex-public-key>]");
             ExitCode::from(2)
         }
     }
+}
+
+fn run_simulation(seed: u64, rounds: usize) -> Result<bool, String> {
+    let fixture = load_fixture(&record_core::fixture_path())?;
+    let result = record_core::simulate(&state_from_fixture(&fixture), seed, rounds)?;
+    println!(
+        "seed {}  rounds {}  checks {}  failures {}",
+        result.seed,
+        result.rounds,
+        result.checks,
+        result.failures.len()
+    );
+    for step in result.trace {
+        println!(
+            "{:02}  {:9}  stale {:2}  events {}  {}",
+            step.round, step.path, step.stale, step.event_count, step.root
+        );
+    }
+    for failure in &result.failures {
+        eprintln!("{failure}");
+    }
+    Ok(result.failures.is_empty())
+}
+
+fn verify(path: &str, trusted: Option<&str>) -> Result<bool, String> {
+    let bytes = std::fs::read(path).map_err(|e| e.to_string())?;
+    if bytes.len() > 10_000_000 {
+        return Err("bundle exceeds 10 MB limit".into());
+    }
+    let bundle: record_core::Bundle = serde_json::from_slice(&bytes).map_err(|e| e.to_string())?;
+    let result = record_core::verify_bundle(&bundle, trusted)?;
+    println!("role: {}  events: {}", result.role_id, result.event_count);
+    println!(
+        "signature: {}",
+        if result.signature_valid {
+            "valid"
+        } else {
+            "INVALID"
+        }
+    );
+    println!(
+        "event chain: {}",
+        if result.chain_valid {
+            "consistent"
+        } else {
+            "INVALID"
+        }
+    );
+    println!(
+        "signer: {}",
+        if result.trusted_signer {
+            "matches supplied trust key"
+        } else {
+            "unknown (compare public key independently)"
+        }
+    );
+    println!("replay: {}", result.replay);
+    println!("public key: {}", bundle.public_key);
+    println!("Source evidence and factual accuracy are not verified by this bundle.");
+    Ok(
+        result.signature_valid
+            && result.chain_valid
+            && (trusted.is_none() || result.trusted_signer),
+    )
 }
 
 fn play(path: &std::path::Path) -> Result<(), String> {
@@ -52,7 +215,11 @@ fn play(path: &std::path::Path) -> Result<(), String> {
         .find(|p| p.status == ProposalStatus::Dismissed)
         .map(|p| p.id.as_str())
         .unwrap_or("none");
-    let current = state.assessments.iter().filter(|a| !state.is_stale(a)).count();
+    let current = state
+        .assessments
+        .iter()
+        .filter(|a| !state.is_stale(a))
+        .count();
     println!("proposal {dismissed} dismissed  assessments still current: {current}  rescored: 0");
 
     let mut again = state_from_fixture(&fixture);
@@ -64,7 +231,11 @@ fn play(path: &std::path::Path) -> Result<(), String> {
         },
     )
     .map_err(|e| e.to_string())?;
-    let stale = again.assessments.iter().filter(|a| again.is_stale(a)).count();
+    let stale = again
+        .assessments
+        .iter()
+        .filter(|a| again.is_stale(a))
+        .count();
     println!(
         "proposal B approved as {}  stale assessments: {stale}  priya rubric: {}",
         again.active.id, again.interviews[0].rubric_version
@@ -74,10 +245,7 @@ fn play(path: &std::path::Path) -> Result<(), String> {
             Some(code) => format!("predicted: ineligible  {}", code.as_str()),
             None => "predicted: eligible".to_string(),
         };
-        println!(
-            "naive  {:<16} {}   {verdict}",
-            line.text, line.naive
-        );
+        println!("naive  {:<16} {}   {verdict}", line.text, line.naive);
     }
     Ok(())
 }

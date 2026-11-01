@@ -1,0 +1,7 @@
+# Implementation status
+
+The repository provides a runnable synthetic local demo with signed browser sessions, isolated synthetic role creation and persisted event streams and signing key, optimistic concurrency and idempotent commands, SSE snapshots, outbox-backed simulated Restate receipt and hold workflows, signed JSON verification, a print-friendly report, and a bounded formal abstraction with supported trace replay.
+
+The implementation is not a production recruiting system. Custom roles use the shared workspace. Payload v3 replays its embedded baseline. A downloaded PDF embeds the signed JSON and says that page bytes are not signed. MCP can use a short-lived bearer grant for the issuing session; the unlabeled sample remains available. Northwind persists a revisioned read model and per-session fault controls. Report, session, and workflow keys are derived for different purposes. Operator dev login works only on loopback and is refused in production. Shared request limits use PostgreSQL when the API has a database. `compose.full.yaml` runs the API in-container. There is still no public URL: hosting and an identity provider were not available, so production OIDC is refused rather than simulated on a public origin.
+
+The current signing key is persisted locally. Its rotation and disaster-recovery process is not automated. JSON verification checks signature and event-chain integrity; it does not verify source truth or independently reconstruct the report. The Quint check covers the model and selected bound, not every implementation behavior.

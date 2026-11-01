@@ -16,3 +16,14 @@ serde.workspace = true
 serde_json.workspace = true
 tower.workspace = true
 http-body-util.workspace = true
+tower-http = { version = "0.6", features = ["fs"] }
+ed25519-dalek.workspace = true
+rand_core.workspace = true
+rmcp = { version = "3.8.0", features = ["transport-streamable-http-server"] }
+sqlx = { version = "0.8", default-features = false, features = ["runtime-tokio-rustls", "postgres", "json"] }
+
+hex.workspace = true
+blake3 = "1"
+async-stream = "0.3"
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+utoipa = "5"

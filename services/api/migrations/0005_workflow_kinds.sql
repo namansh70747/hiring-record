@@ -1,0 +1,1 @@
+ALTER TABLE hr_workflow_outbox ADD COLUMN IF NOT EXISTS kind TEXT NOT NULL DEFAULT 'receipt';

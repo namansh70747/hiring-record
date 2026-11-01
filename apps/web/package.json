@@ -1,0 +1,38 @@
+{
+  "name": "hiring-record",
+  "private": true,
+  "scripts": {
+    "dev": "next dev -p 3000",
+    "build": "next build",
+    "typecheck": "tsc --noEmit",
+    "build:wasm": "wasm-pack build ../../crates/record-wasm --target web --out-dir ../../apps/web/public/engine --release",
+    "prebuild": "npm run build:wasm",
+    "generate:api": "../../scripts/generate-api.sh",
+    "test:e2e": "playwright test"
+  },
+  "dependencies": {
+    "@noble/curves": "^2.0.1",
+    "@noble/hashes": "2.0.1",
+    "lucide-react": "1.66.0",
+    "next": "16.4.3",
+    "openapi-fetch": "^0.17.0",
+    "pdf-lib": "^1.17.1",
+    "react": "19.3.1",
+    "react-dom": "19.3.1"
+  },
+  "devDependencies": {
+    "@axe-core/playwright": "^4.14.0",
+    "@playwright/test": "^1.64.1",
+    "@types/node": "^24.0.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "openapi-typescript": "^7.13.0",
+    "typescript": "^5.9.0",
+    "wasm-pack": "^0.15.1"
+  },
+  "overrides": {
+    "@redocly/openapi-core": {
+      "minimatch": "11.0.1"
+    }
+  }
+}
