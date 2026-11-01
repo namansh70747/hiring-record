@@ -54,6 +54,8 @@ struct Job {
     session_id: String,
     generation: i64,
     receipt_id: String,
+    #[serde(default)]
+    kind: String,
 }
 pub async fn complete(
     State(app): State<AppState>,
@@ -75,21 +77,28 @@ pub async fn complete(
             serde_json::json!({"status":"superseded by scenario reset"}),
         ));
     }
-    let receipt = state
-        .receipts
-        .iter()
-        .find(|r| r.id == job.receipt_id)
-        .ok_or(StatusCode::CONFLICT)?;
-    if receipt.acknowledged {
-        return Ok(Json(serde_json::json!({"status":"already acknowledged"})));
-    }
-    let event = record_core::decide(
-        &state,
+    let command = if job.kind == "hold" {
+        if state.hold_confirmed {
+            return Ok(Json(serde_json::json!({"status":"already confirmed"})));
+        }
+        if !state.hold_pending {
+            return Ok(Json(serde_json::json!({"status":"superseded"})));
+        }
+        record_core::Command::ConfirmHold
+    } else {
+        let receipt = state
+            .receipts
+            .iter()
+            .find(|r| r.id == job.receipt_id)
+            .ok_or(StatusCode::CONFLICT)?;
+        if receipt.acknowledged {
+            return Ok(Json(serde_json::json!({"status":"already acknowledged"})));
+        }
         record_core::Command::Acknowledge {
             receipt_id: job.receipt_id,
-        },
-    )
-    .map_err(|_| StatusCode::CONFLICT)?;
+        }
+    };
+    let event = record_core::decide(&state, command).map_err(|_| StatusCode::CONFLICT)?;
     record_core::evolve(&mut state, event.clone());
     store
         .append_once(
@@ -102,5 +111,5 @@ pub async fn complete(
         )
         .await
         .map_err(|e| e.status())?;
-    Ok(Json(serde_json::json!({"status":"acknowledged"})))
+    Ok(Json(serde_json::json!({"status":"completed"})))
 }

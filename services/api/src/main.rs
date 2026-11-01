@@ -41,6 +41,7 @@ struct AppState {
     streams: Arc<tokio::sync::Semaphore>,
     results: Arc<Mutex<RequestResults>>,
     request_limits: Arc<Mutex<HashMap<String, (u64, u32)>>>,
+    workflow_enabled: bool,
 }
 
 impl Default for AppState {
@@ -62,6 +63,7 @@ impl Default for AppState {
             results: Arc::new(Mutex::new(HashMap::new())),
             public_origin: "http://127.0.0.1:8080".into(),
             request_limits: Arc::new(Mutex::new(HashMap::new())),
+            workflow_enabled: false,
         }
     }
 }
@@ -113,6 +115,7 @@ async fn main() {
         println!("Synthetic scenario storage: in-memory");
     }
     if let Ok(ingress) = std::env::var("RESTATE_INGRESS") {
+        state.workflow_enabled = state.store.is_some();
         workflows::start(state.clone(), ingress);
     }
     let app = router(state);
@@ -724,6 +727,7 @@ fn snapshot(state: &RoleState, live_total: usize) -> serde_json::Value {
         interviews: state.interviews.clone(),
         receipts: state.receipts.clone(),
         hold_confirmed: state.hold_confirmed,
+        hold_pending: state.hold_pending,
         support_present: state.support_present,
         events: state.events.clone(),
         engine_state: state.clone(),
@@ -794,7 +798,12 @@ async fn confirm_hold(
     State(app): State<AppState>,
     headers: HeaderMap,
 ) -> Result<Json<serde_json::Value>, StatusCode> {
-    mutate(app, headers, Command::ConfirmHold).await
+    let command = if app.workflow_enabled {
+        Command::RequestHoldConfirmation
+    } else {
+        Command::ConfirmHold
+    };
+    mutate(app, headers, command).await
 }
 #[utoipa::path(post,path="/v1/support/mina/remove",responses((status=200,body=api_document::ViewDocument)))]
 async fn remove_support(

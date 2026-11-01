@@ -34,7 +34,7 @@ jobs:
         with:
           distribution: temurin
           java-version: '21'
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@1.91.1
         with:
           components: rustfmt, clippy
       - run: npm ci
@@ -66,3 +66,25 @@ jobs:
           node scripts/wasm-parity.mjs
           python3 scripts/stream-smoke.py
           npm run test:e2e --prefix apps/web -- --workers=2
+
+  durable-workflow:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.91.1
+      - run: docker compose -p hiring-record up -d --build --wait
+      - run: ./scripts/register-workflow.sh
+      - run: cargo build -p record-api
+      - name: Exercise restart and durable callbacks
+        env:
+          DATABASE_URL: postgres://hiring_record:local_demo_only@127.0.0.1:55432/hiring_record
+          RESTATE_INGRESS: http://127.0.0.1:19080
+          BIND_ADDRESS: 0.0.0.0:8080
+          RESTART_NORTHWIND: '1'
+        run: |
+          target/debug/record-api > /tmp/hiring-record-workflow.log 2>&1 &
+          for attempt in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:8080/health > /dev/null; then break; fi
+            sleep 1
+          done
+          python3 scripts/workflow-smoke.py

@@ -136,6 +136,8 @@ pub struct State {
     pub proposals: Vec<Proposal>,
     pub receipts: Vec<Receipt>,
     pub hold_confirmed: bool,
+    #[serde(default)]
+    pub hold_pending: bool,
     pub support_present: bool,
     pub quote_declined: bool,
     pub link_operations: Vec<String>,
@@ -167,6 +169,7 @@ impl State {
             proposals: vec![],
             receipts: vec![],
             hold_confirmed: false,
+            hold_pending: false,
             support_present: true,
             quote_declined: false,
             link_operations: vec![],
@@ -241,6 +244,7 @@ pub enum Command {
     Acknowledge {
         receipt_id: String,
     },
+    RequestHoldConfirmation,
     ConfirmHold,
     RemoveSupport,
 }

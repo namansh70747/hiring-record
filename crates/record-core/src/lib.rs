@@ -54,6 +54,7 @@ pub fn state_from_fixture(fixture: &Fixture) -> State {
         proposals: vec![fixture.proposal.clone()],
         receipts: vec![],
         hold_confirmed: false,
+        hold_pending: false,
         support_present: true,
         quote_declined: false,
         link_operations: vec![],

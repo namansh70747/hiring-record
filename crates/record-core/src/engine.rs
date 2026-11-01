@@ -12,6 +12,9 @@ pub fn decide(state: &State, command: Command) -> Result<Event, Rejection> {
             return Err(Rejection::ReceiptUnavailable(receipt_id.clone()));
         }
         Command::ConfirmHold if state.hold_confirmed => return Err(Rejection::AlreadyRecorded),
+        Command::RequestHoldConfirmation if state.hold_confirmed || state.hold_pending => {
+            return Err(Rejection::AlreadyRecorded)
+        }
         Command::RemoveSupport if !state.support_present => return Err(Rejection::AlreadyRecorded),
         _ => {}
     }
@@ -127,7 +130,10 @@ pub fn evolve(state: &mut State, event: Event) {
                 receipt.acknowledged = true;
             }
         }
-        EventKind::HoldConfirmed => state.hold_confirmed = true,
+        EventKind::HoldConfirmed => {
+            state.hold_confirmed = true;
+            state.hold_pending = false;
+        }
         EventKind::SupportRemoved => state.support_present = false,
     }
     state.events.push(event);
@@ -208,6 +214,7 @@ pub fn compare_other_path(initial: &State, current: &State) -> Result<Comparison
                         command @ (Command::RecordSource { .. }
                         | Command::RecordFact { .. }
                         | Command::OverrideDecision { .. }
+                        | Command::RequestHoldConfirmation
                         | Command::OfferQuote { .. }
                         | Command::AcceptQuote { .. }
                         | Command::DeclineQuote { .. }),
@@ -550,10 +557,10 @@ fn validate_command(state: &State, command: &Command) -> Result<(), Rejection> {
                 return Err(invalid("only an offered quote can be accepted or declined"));
             }
         }
-        Command::Approve { new_version_id, .. } => {
-            if !valid_id(new_version_id) || new_version_id == &state.active.id {
-                return Err(invalid("new standard ID must be distinct and valid"));
-            }
+        Command::Approve { new_version_id, .. }
+            if !valid_id(new_version_id) || new_version_id == &state.active.id =>
+        {
+            return Err(invalid("new standard ID must be distinct and valid"));
         }
         _ => {}
     }
@@ -599,6 +606,7 @@ fn evolve_domain(state: &mut State, command: Command) {
         }
         Command::OverrideDecision { decision_override } => state.overrides.push(decision_override),
         Command::BindInterview { binding } => state.interviews.push(binding),
+        Command::RequestHoldConfirmation => state.hold_pending = true,
         Command::OfferQuote { quote } => state.quotes.push(quote),
         Command::AcceptQuote { quote_id } => {
             if let Some(quote) = state.quotes.iter_mut().find(|q| q.id == quote_id) {

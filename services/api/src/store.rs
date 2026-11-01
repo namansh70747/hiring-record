@@ -110,6 +110,19 @@ impl Store {
                 .execute(&mut *tx)
                 .await?;
         }
+        let applied: bool = sqlx::query_scalar(
+            "SELECT EXISTS (SELECT 1 FROM hr_schema_migrations WHERE version = 5)",
+        )
+        .fetch_one(&mut *tx)
+        .await?;
+        if !applied {
+            sqlx::raw_sql(include_str!("../migrations/0005_workflow_kinds.sql"))
+                .execute(&mut *tx)
+                .await?;
+            sqlx::query("INSERT INTO hr_schema_migrations (version) VALUES (5)")
+                .execute(&mut *tx)
+                .await?;
+        }
         tx.commit().await?;
         Ok(Self { pool })
     }
@@ -272,9 +285,16 @@ impl Store {
         }
         sqlx::query("INSERT INTO hr_demo_events (session_id,generation,sequence,event) VALUES ($1,$2,$3,$4)").bind(id).bind(generation).bind(event.seq as i64).bind(sqlx::types::Json(event)).execute(&mut *tx).await?;
         sqlx::query("INSERT INTO hr_request_results (session_id,request_key,fingerprint,response) VALUES ($1,$2,$3,$4)").bind(id).bind(key).bind(fingerprint).bind(&response).execute(&mut *tx).await?;
+        let domain_command = if event.kind == record_core::EventKind::DomainCommandV2 {
+            serde_json::from_str::<serde_json::Value>(&event.payload).ok()
+        } else {
+            None
+        };
+        let command_type = domain_command
+            .as_ref()
+            .and_then(|v| v["command"]["type"].as_str());
         if event.kind == record_core::EventKind::StandardApproved
-            || (event.kind == record_core::EventKind::DomainCommandV2
-                && event.payload.contains("accept_quote"))
+            || command_type == Some("accept_quote")
         {
             let snapshot: serde_json::Value = response.clone();
             if let Some(receipts) = snapshot["receipts"].as_array() {
@@ -287,12 +307,17 @@ impl Store {
                 }
             }
         }
+        if command_type == Some("request_hold_confirmation") {
+            let workflow_id = format!("{id}-{generation}-{}", event.seq);
+            sqlx::query("INSERT INTO hr_workflow_outbox(workflow_id,session_id,generation,receipt_id,kind) VALUES($1,$2,$3,'debrief','hold') ON CONFLICT DO NOTHING")
+                .bind(workflow_id).bind(id).bind(generation).execute(&mut *tx).await?;
+        }
         tx.commit().await?;
         Ok(response)
     }
     pub async fn pending_workflows(&self) -> Result<Vec<serde_json::Value>, StoreError> {
-        let rows=sqlx::query("SELECT workflow_id,session_id,generation,receipt_id FROM hr_workflow_outbox WHERE NOT dispatched ORDER BY created_at LIMIT 10").fetch_all(&self.pool).await?;
-        rows.into_iter().map(|r| Ok(serde_json::json!({"workflow_id":r.try_get::<String,_>("workflow_id")?,"session_id":r.try_get::<String,_>("session_id")?,"generation":r.try_get::<i64,_>("generation")?,"receipt_id":r.try_get::<String,_>("receipt_id")?,"delay_ms":15000}))).collect()
+        let rows=sqlx::query("SELECT workflow_id,session_id,generation,receipt_id,kind FROM hr_workflow_outbox WHERE NOT dispatched ORDER BY created_at LIMIT 10").fetch_all(&self.pool).await?;
+        rows.into_iter().map(|r| Ok(serde_json::json!({"workflow_id":r.try_get::<String,_>("workflow_id")?,"session_id":r.try_get::<String,_>("session_id")?,"generation":r.try_get::<i64,_>("generation")?,"receipt_id":r.try_get::<String,_>("receipt_id")?,"kind":r.try_get::<String,_>("kind")?,"delay_ms":15000}))).collect()
     }
     pub async fn record_dispatch(&self, id: &str, error: Option<&str>) -> Result<(), StoreError> {
         sqlx::query("UPDATE hr_workflow_outbox SET attempts=attempts+1,dispatched=$2,last_error=$3 WHERE workflow_id=$1").bind(id).bind(error.is_none()).bind(error).execute(&self.pool).await?;

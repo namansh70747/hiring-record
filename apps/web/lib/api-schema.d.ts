@@ -467,6 +467,9 @@ export interface components {
             type: "acknowledge";
         } | {
             /** @enum {string} */
+            type: "request_hold_confirmation";
+        } | {
+            /** @enum {string} */
             type: "confirm_hold";
         } | {
             /** @enum {string} */
@@ -622,6 +625,7 @@ export interface components {
             evidence: components["schemas"]["Evidence"][];
             facts?: components["schemas"]["SourcedFact"][];
             hold_confirmed: boolean;
+            hold_pending?: boolean;
             interviews: components["schemas"]["InterviewBinding"][];
             link_operations: string[];
             overrides?: components["schemas"]["DecisionOverride"][];
@@ -642,6 +646,7 @@ export interface components {
             events: components["schemas"]["Event"][];
             facts: components["schemas"]["SourcedFact"][];
             hold_confirmed: boolean;
+            hold_pending: boolean;
             interviews: components["schemas"]["InterviewBinding"][];
             live_total: number;
             overrides: components["schemas"]["DecisionOverride"][];

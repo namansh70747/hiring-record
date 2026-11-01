@@ -32,6 +32,7 @@ pub struct ViewDocument {
     pub interviews: Vec<InterviewBinding>,
     pub receipts: Vec<Receipt>,
     pub hold_confirmed: bool,
+    pub hold_pending: bool,
     pub support_present: bool,
     pub events: Vec<Event>,
     pub engine_state: State,

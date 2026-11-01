@@ -9,6 +9,31 @@ fn opened() -> record_core::State {
 }
 
 #[test]
+fn pending_hold_is_not_reported_as_booked() {
+    let mut state = opened();
+    apply(&mut state, Command::RequestHoldConfirmation).unwrap();
+    let pending = evaluate_report(&state);
+    let line = pending
+        .lines
+        .iter()
+        .find(|line| line.criterion_id == "op-hold")
+        .unwrap();
+    assert!(!line.eligible);
+    assert_eq!(line.refusal, Some(RefusalCode::RUnconfirmed));
+    assert!(apply(&mut state, Command::RequestHoldConfirmation).is_err());
+    apply(&mut state, Command::ConfirmHold).unwrap();
+    assert!(
+        evaluate_report(&state)
+            .lines
+            .iter()
+            .find(|line| line.criterion_id == "op-hold")
+            .unwrap()
+            .eligible
+    );
+    assert!(!state.hold_pending);
+}
+
+#[test]
 fn dismiss_leaves_scores_current() {
     let mut state = opened();
     let before: Vec<_> = state

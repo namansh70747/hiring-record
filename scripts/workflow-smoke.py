@@ -20,3 +20,15 @@ for _ in range(45):
         break
 else:
     raise SystemExit('FAIL: workflow remained pending: '+json.dumps(request('/v1/workflows')))
+pending=request('/v1/holds/debrief/confirm','POST',{'idempotency-key':uuid.uuid4().hex,'if-match':state['version']})
+assert pending['hold_pending'] and not pending['hold_confirmed'], 'hold must remain pending until the callback'
+for _ in range(45):
+    time.sleep(1)
+    state=request('/v1/roles/sept/view')
+    if state['hold_confirmed']:
+        assert not state['hold_pending']
+        assert len([e for e in state['events'] if e['kind']=='HoldConfirmed'])==1
+        print('PASS: durable synthetic hold completed once after pending')
+        break
+else:
+    raise SystemExit('FAIL: hold confirmation remained pending')

@@ -392,6 +392,20 @@
             "properties": {
               "type": {
                 "enum": [
+                  "request_hold_confirmation"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "type"
+            ],
+            "type": "object"
+          },
+          {
+            "properties": {
+              "type": {
+                "enum": [
                   "confirm_hold"
                 ],
                 "type": "string"
@@ -1069,6 +1083,9 @@
           "hold_confirmed": {
             "type": "boolean"
           },
+          "hold_pending": {
+            "type": "boolean"
+          },
           "interviews": {
             "items": {
               "$ref": "#/components/schemas/InterviewBinding"
@@ -1179,6 +1196,9 @@
           "hold_confirmed": {
             "type": "boolean"
           },
+          "hold_pending": {
+            "type": "boolean"
+          },
           "interviews": {
             "items": {
               "$ref": "#/components/schemas/InterviewBinding"
@@ -1263,6 +1283,7 @@
           "interviews",
           "receipts",
           "hold_confirmed",
+          "hold_pending",
           "support_present",
           "events",
           "engine_state",

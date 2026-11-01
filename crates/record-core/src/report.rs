@@ -206,6 +206,8 @@ fn operation_lines(state: &State) -> Vec<ClaimLine> {
             "Debrief booked",
             if state.hold_confirmed {
                 "confirmed"
+            } else if state.hold_pending {
+                "confirmation pending"
             } else {
                 "1 hold"
             },
@@ -216,7 +218,9 @@ fn operation_lines(state: &State) -> Vec<ClaimLine> {
                 Some(RefusalCode::RUnconfirmed)
             },
             if state.hold_confirmed {
-                "A person confirmed the hold.".into()
+                "A simulated confirmation was recorded.".into()
+            } else if state.hold_pending {
+                "Confirmation was requested but is still pending; the hold is not booked.".into()
             } else {
                 "The hold has no confirmation, so it is not a booking.".into()
             },
