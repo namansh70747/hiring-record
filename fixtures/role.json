@@ -1,0 +1,80 @@
+{
+  "role_id": "sept",
+  "standard": {
+    "id": "A",
+    "effective_at": "2026-09-01",
+    "criteria": [
+      {
+        "id": "built_from_zero",
+        "text": "Built from zero",
+        "added_at": "2026-09-01",
+        "added_by": "mina"
+      }
+    ]
+  },
+  "people": [
+    { "id": "ada", "name": "Ada", "place": "hired" },
+    { "id": "bo", "name": "Bo", "place": "hired" },
+    { "id": "cy", "name": "Cy", "place": "hired" },
+    { "id": "dee", "name": "Dee", "place": "rejected" },
+    { "id": "ed", "name": "Ed", "place": "rejected" },
+    { "id": "iris", "name": "Iris", "place": "in_review" },
+    { "id": "noel", "name": "Noel", "place": "in_review" },
+    { "id": "priya", "name": "Priya", "place": "in_review" }
+  ],
+  "decisions": [
+    { "person": "ada", "outcome": "hire", "at": "2026-09-14", "version": "A" },
+    { "person": "bo", "outcome": "hire", "at": "2026-09-14", "version": "A" },
+    { "person": "cy", "outcome": "hire", "at": "2026-09-14", "version": "A" },
+    { "person": "dee", "outcome": "reject", "at": "2026-09-14", "version": "A" },
+    { "person": "ed", "outcome": "reject", "at": "2026-09-14", "version": "A" }
+  ],
+  "evidence": [
+    { "person": "ada", "criterion": "built_from_zero", "met": true },
+    { "person": "bo", "criterion": "built_from_zero", "met": true },
+    { "person": "cy", "criterion": "built_from_zero", "met": true },
+    { "person": "dee", "criterion": "built_from_zero", "met": false },
+    { "person": "ed", "criterion": "built_from_zero", "met": false },
+    { "person": "ada", "criterion": "led_a_launch", "met": true },
+    { "person": "bo", "criterion": "led_a_launch", "met": true },
+    { "person": "cy", "criterion": "led_a_launch", "met": true },
+    { "person": "dee", "criterion": "led_a_launch", "met": false },
+    { "person": "ada", "criterion": "still_hands_on", "met": true },
+    { "person": "bo", "criterion": "still_hands_on", "met": true },
+    { "person": "cy", "criterion": "still_hands_on", "met": true },
+    { "person": "dee", "criterion": "still_hands_on", "met": true },
+    { "person": "ed", "criterion": "still_hands_on", "met": true }
+  ],
+  "assessments": [
+    { "id": "a-iris", "person": "iris", "version": "A", "criterion": "built_from_zero", "met": true, "citation": "src-iris" },
+    { "id": "a-noel", "person": "noel", "version": "A", "criterion": "built_from_zero", "met": false, "citation": "src-noel" },
+    { "id": "a-priya", "person": "priya", "version": "A", "criterion": "built_from_zero", "met": true, "citation": "src-priya" },
+    { "id": "a-ada", "person": "ada", "version": "A", "criterion": "built_from_zero", "met": true, "citation": "src-ada" },
+    { "id": "a-bo", "person": "bo", "version": "A", "criterion": "built_from_zero", "met": true, "citation": "src-bo" },
+    { "id": "a-cy", "person": "cy", "version": "A", "criterion": "built_from_zero", "met": true, "citation": "src-cy" },
+    { "id": "a-dee", "person": "dee", "version": "A", "criterion": "built_from_zero", "met": false, "citation": "src-dee" },
+    { "id": "a-ed", "person": "ed", "version": "A", "criterion": "built_from_zero", "met": false, "citation": "src-ed" }
+  ],
+  "interviews": [
+    { "person": "priya", "rubric_version": "A", "status": "open" }
+  ],
+  "proposal": {
+    "id": "B",
+    "base": "A",
+    "status": "open",
+    "add": [
+      {
+        "id": "led_a_launch",
+        "text": "Led a launch",
+        "added_at": "2026-10-20",
+        "added_by": "mina"
+      },
+      {
+        "id": "still_hands_on",
+        "text": "Still hands-on",
+        "added_at": "2026-09-01",
+        "added_by": "mina"
+      }
+    ]
+  }
+}

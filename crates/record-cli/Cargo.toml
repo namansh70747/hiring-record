@@ -1,0 +1,12 @@
+[package]
+name = "record-cli"
+edition.workspace = true
+license.workspace = true
+version.workspace = true
+
+[[bin]]
+name = "record"
+path = "src/main.rs"
+
+[dependencies]
+record-core = { path = "../record-core" }
