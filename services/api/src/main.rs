@@ -42,6 +42,13 @@ impl Default for AppState {
 }
 
 impl AppState {
+    async fn ready(&self) -> bool {
+        match &self.store {
+            Some(store) => store.healthy().await,
+            None => true,
+        }
+    }
+
     async fn read_scenario(&self, id: &str) -> Result<(i64, RoleState), StatusCode> {
         if let Some(store) = &self.store {
             store.load(id).await.map_err(|error| error.status())
@@ -124,6 +131,7 @@ fn router(state: AppState) -> Router {
     );
     Router::new()
         .route("/health", get(|| async { "ok" }))
+        .route("/ready", get(connection_check))
         .route("/v1/roles/sept/report", get(report))
         .route("/v1/roles/sept/view", get(view))
         .route("/v1/roles/sept/bundle", get(bundle))
@@ -172,9 +180,9 @@ async fn view(
 async fn hypothetical(
     State(app): State<AppState>,
     headers: HeaderMap,
-) -> Result<Json<Report>, StatusCode> {
+) -> Result<Json<record_core::Comparison>, StatusCode> {
     let (_, state) = app.read_scenario(&session(&headers)?).await?;
-    record_core::counterfactual_approve(&state)
+    record_core::compare_other_path(&fresh(), &state)
         .map(Json)
         .map_err(|_| StatusCode::CONFLICT)
 }
@@ -192,9 +200,17 @@ async fn reset(
     Ok(Json(snapshot(&fresh(), 0)))
 }
 
-async fn connection_check() -> Json<serde_json::Value> {
-    Json(
-        serde_json::json!({ "connected": true, "ready": true, "writes": false, "data": "synthetic", "transport": "MCP Streamable HTTP at /mcp" }),
+async fn connection_check(State(app): State<AppState>) -> (StatusCode, Json<serde_json::Value>) {
+    let ready = app.ready().await;
+    (
+        if ready {
+            StatusCode::OK
+        } else {
+            StatusCode::SERVICE_UNAVAILABLE
+        },
+        Json(
+            serde_json::json!({ "connected": true, "ready": ready, "writes": false, "data": "synthetic", "transport": "MCP Streamable HTTP at /mcp" }),
+        ),
     )
 }
 
@@ -258,6 +274,7 @@ fn snapshot(state: &RoleState, live_total: usize) -> serde_json::Value {
         "report": evaluate_report(state), "interviews": state.interviews,
         "receipts": state.receipts, "hold_confirmed": state.hold_confirmed,
         "support_present": state.support_present, "events": state.events,
+        "engine_state": state,
         "at": state.events.len(), "live_total": live_total
     })
 }

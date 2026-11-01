@@ -64,8 +64,8 @@ impl RecordTools {
 #[tool_router]
 impl RecordTools {
     #[tool(description = "Check readiness. This server is local, synthetic and read-only.")]
-    fn connection_check(&self) -> String {
-        serde_json::json!({"connected":true,"ready":true,"data":"synthetic","writes":false,"scope":"local demo"}).to_string()
+    async fn connection_check(&self) -> String {
+        serde_json::json!({"connected":true,"ready":self.app.ready().await,"data":"synthetic","writes":false,"scope":"local demo"}).to_string()
     }
     #[tool(
         description = "Get the hiring role, active standard, proposal and impact preview. Omit session_id for the approved example."

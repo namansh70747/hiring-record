@@ -138,6 +138,61 @@ pub fn counterfactual_approve(state: &State) -> Result<Report, Rejection> {
     Ok(crate::evaluate_report(&branch))
 }
 
+/// Compare the opposite proposal decision from the original fixture. Independent
+/// hold and support events are replayed; an acknowledgement belonging to the
+/// approved path is omitted when the proposal is dismissed.
+pub fn compare_other_path(initial: &State, current: &State) -> Result<Comparison, Rejection> {
+    let proposal = current
+        .proposals
+        .iter()
+        .find(|p| p.id == "B")
+        .ok_or_else(|| Rejection::ProposalMissing("B".into()))?;
+    if !initial.events.is_empty()
+        || initial.role_id != current.role_id
+        || initial.active.id != proposal.base
+    {
+        return Err(Rejection::BaselineMismatch);
+    }
+    let dismiss = proposal.status == ProposalStatus::Approved;
+    let mut branch = initial.clone();
+    if dismiss {
+        apply(
+            &mut branch,
+            Command::Dismiss {
+                proposal_id: "B".into(),
+            },
+        )?;
+    } else {
+        apply(
+            &mut branch,
+            Command::Approve {
+                proposal_id: "B".into(),
+                new_version_id: "B2-hypothetical".into(),
+            },
+        )?;
+    }
+    for event in &current.events {
+        match event.kind {
+            EventKind::HoldConfirmed => {
+                apply(&mut branch, Command::ConfirmHold)?;
+            }
+            EventKind::SupportRemoved => {
+                apply(&mut branch, Command::RemoveSupport)?;
+            }
+            _ => {}
+        }
+    }
+    Ok(Comparison {
+        path: if dismiss { "dismissed" } else { "approved" }.into(),
+        stale_assessments: branch
+            .assessments
+            .iter()
+            .filter(|a| branch.is_stale(a))
+            .count(),
+        report: crate::evaluate_report(&branch),
+    })
+}
+
 pub fn apply(state: &mut State, command: Command) -> Result<&Event, Rejection> {
     let event = decide(state, command)?;
     evolve(state, event);

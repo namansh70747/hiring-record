@@ -1,0 +1,19 @@
+# Hiring Record — synthetic recruiting record demo
+
+Hiring Record is a local, synthetic demonstration of a versioned hiring standard, assessments, evidence, report refusals and a hash-chained event history. It is not a production recruiting system and contains no real candidates.
+
+## Entry points
+
+- Workspace: /record/
+- Simulation lab: /lab/
+- Offline bundle verifier: /verify/
+- Developer guide: /developers/
+- OpenAPI 3.1 description: /openapi.json
+- MCP Streamable HTTP: /mcp (read-only; synthetic data)
+- Agent setup: /agent.md
+
+## Important behavior
+
+Dismissing proposal B leaves assessments current. Approving it activates B2 and older assessments become stale; an already-open interview keeps its original rubric. A report can preserve a descriptive count while refusing a predictive claim. A receipt is pending until acknowledged, and Northwind has no sync operation.
+
+The server is a local demo. PostgreSQL mode persists synthetic event streams; memory mode does not. Signed JSON bundles contain a temporary demo public key; a matching signature does not establish signer identity or the truth of evidence. Source documents are not included in the bundle.

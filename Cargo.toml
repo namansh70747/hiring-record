@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/record-core", "crates/record-cli", "services/api"]
+members = ["crates/record-core", "crates/record-cli", "crates/record-wasm", "services/api"]
 
 [workspace.package]
 edition = "2021"

@@ -10,7 +10,9 @@ mod report;
 mod simulation;
 
 pub use bundle::{create_bundle, verify_bundle, Bundle, BundlePayload, Verification};
-pub use engine::{apply, counterfactual_approve, decide, evolve, preview_change};
+pub use engine::{
+    apply, compare_other_path, counterfactual_approve, decide, evolve, preview_change,
+};
 pub use model::*;
 pub use report::evaluate_report;
 pub use simulation::{simulate, SimulationResult, SimulationStep};

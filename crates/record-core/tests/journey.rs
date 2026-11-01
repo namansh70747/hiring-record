@@ -377,3 +377,44 @@ fn removed_support_changes_eligibility_without_erasing_historical_count() {
     }
     assert_eq!(replay, state);
 }
+
+#[test]
+fn comparing_an_approved_path_replays_dismissal_and_independent_events() {
+    let initial = opened();
+    let mut current = initial.clone();
+    apply(
+        &mut current,
+        Command::Approve {
+            proposal_id: "B".into(),
+            new_version_id: "B2".into(),
+        },
+    )
+    .unwrap();
+    apply(
+        &mut current,
+        Command::Acknowledge {
+            receipt_id: "nw-B2".into(),
+        },
+    )
+    .unwrap();
+    apply(&mut current, Command::RemoveSupport).unwrap();
+    let comparison = record_core::compare_other_path(&initial, &current).unwrap();
+    assert_eq!(comparison.path, "dismissed");
+    assert_eq!(comparison.report.standard_id, "A");
+    assert_eq!(comparison.stale_assessments, 0);
+    assert_eq!(
+        comparison
+            .report
+            .lines
+            .iter()
+            .find(|l| l.criterion_id == "built_from_zero")
+            .unwrap()
+            .refusal,
+        Some(RefusalCode::RSupportGone)
+    );
+    assert_eq!(
+        current.events.len(),
+        3,
+        "comparison does not mutate the live path"
+    );
+}

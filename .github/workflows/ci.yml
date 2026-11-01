@@ -49,3 +49,4 @@ jobs:
             sleep 1
           done
           python3 scripts/smoke.py
+          node scripts/wasm-parity.mjs

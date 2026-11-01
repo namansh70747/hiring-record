@@ -31,6 +31,8 @@ def expect(condition, message):
         raise AssertionError(message)
 
 def main():
+    status, spec = request('/openapi.json')
+    expect(status == 200 and spec['openapi'] == '3.1.0' and '/mcp' in spec['paths'], 'OpenAPI reference')
     status, initial = request('/v1/roles/sept/view')
     expect(status == 200 and initial['standard_id'] == 'A', 'fresh standard')
     expect(all(not p['stale'] for p in initial['people']), 'initial scores current')

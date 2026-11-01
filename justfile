@@ -38,3 +38,7 @@ sim seed="42" rounds="100":
 # Run the end-to-end check against a running local server.
 smoke:
     python3 scripts/smoke.py
+
+# Compare WASM and API results against a running local server after building the web app.
+wasm-parity:
+    node scripts/wasm-parity.mjs

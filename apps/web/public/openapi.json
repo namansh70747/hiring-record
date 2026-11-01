@@ -1,0 +1,444 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Hiring Record Synthetic Demo API",
+    "version": "0.2.0",
+    "description": "Local demo API. Synthetic data only; not a production multi-tenant service. MCP tools are read-only."
+  },
+  "servers": [
+    {
+      "url": "/"
+    }
+  ],
+  "paths": {
+    "/health": {
+      "get": {
+        "summary": "Liveness check",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "503": {
+            "description": "Storage unavailable"
+          }
+        }
+      }
+    },
+    "/ready": {
+      "get": {
+        "summary": "Storage readiness check",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "503": {
+            "description": "Storage unavailable"
+          }
+        }
+      }
+    },
+    "/v1/roles/sept/view": {
+      "get": {
+        "summary": "Read the synthetic scenario or an event-index snapshot",
+        "parameters": [
+          {
+            "name": "x-demo-session",
+            "in": "header",
+            "required": false,
+            "description": "Synthetic scenario identifier, up to 80 ASCII letters, digits or hyphens. Omit for the default local scenario.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "at",
+            "in": "query",
+            "required": false,
+            "description": "Historical event index.",
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "503": {
+            "description": "Storage unavailable"
+          }
+        }
+      }
+    },
+    "/v1/roles/sept/report": {
+      "get": {
+        "summary": "Evaluate the report",
+        "parameters": [
+          {
+            "name": "x-demo-session",
+            "in": "header",
+            "required": false,
+            "description": "Synthetic scenario identifier, up to 80 ASCII letters, digits or hyphens. Omit for the default local scenario.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "503": {
+            "description": "Storage unavailable"
+          }
+        }
+      }
+    },
+    "/v1/roles/sept/counterfactual": {
+      "get": {
+        "summary": "Evaluate the opposite proposal path",
+        "parameters": [
+          {
+            "name": "x-demo-session",
+            "in": "header",
+            "required": false,
+            "description": "Synthetic scenario identifier, up to 80 ASCII letters, digits or hyphens. Omit for the default local scenario.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "503": {
+            "description": "Storage unavailable"
+          }
+        }
+      }
+    },
+    "/v1/roles/sept/bundle": {
+      "get": {
+        "summary": "Sign and export the current synthetic report bundle",
+        "parameters": [
+          {
+            "name": "x-demo-session",
+            "in": "header",
+            "required": false,
+            "description": "Synthetic scenario identifier, up to 80 ASCII letters, digits or hyphens. Omit for the default local scenario.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "503": {
+            "description": "Storage unavailable"
+          }
+        }
+      }
+    },
+    "/v1/signing-key": {
+      "get": {
+        "summary": "Read the current ephemeral demo public key",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "503": {
+            "description": "Storage unavailable"
+          }
+        }
+      }
+    },
+    "/v1/simulate": {
+      "get": {
+        "summary": "Run reproducible engine simulation",
+        "parameters": [
+          {
+            "name": "seed",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          {
+            "name": "rounds",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 10000
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "503": {
+            "description": "Storage unavailable"
+          }
+        }
+      }
+    },
+    "/api/connection_check": {
+      "get": {
+        "summary": "Read demo readiness",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "503": {
+            "description": "Storage unavailable"
+          }
+        }
+      }
+    },
+    "/v1/roles/sept/proposals/B/dismiss": {
+      "post": {
+        "summary": "Dismiss proposal B",
+        "parameters": [
+          {
+            "name": "x-demo-session",
+            "in": "header",
+            "required": false,
+            "description": "Synthetic scenario identifier, up to 80 ASCII letters, digits or hyphens. Omit for the default local scenario.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Updated synthetic scenario"
+          },
+          "400": {
+            "description": "Invalid session"
+          },
+          "403": {
+            "description": "Cross-origin mutation rejected"
+          },
+          "409": {
+            "description": "Command conflicts with current state"
+          },
+          "503": {
+            "description": "Storage unavailable"
+          }
+        }
+      }
+    },
+    "/v1/roles/sept/proposals/B/approve": {
+      "post": {
+        "summary": "Approve proposal B",
+        "parameters": [
+          {
+            "name": "x-demo-session",
+            "in": "header",
+            "required": false,
+            "description": "Synthetic scenario identifier, up to 80 ASCII letters, digits or hyphens. Omit for the default local scenario.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Updated synthetic scenario"
+          },
+          "400": {
+            "description": "Invalid session"
+          },
+          "403": {
+            "description": "Cross-origin mutation rejected"
+          },
+          "409": {
+            "description": "Command conflicts with current state"
+          },
+          "503": {
+            "description": "Storage unavailable"
+          }
+        }
+      }
+    },
+    "/v1/roles/sept/reset": {
+      "post": {
+        "summary": "Reset the synthetic scenario",
+        "parameters": [
+          {
+            "name": "x-demo-session",
+            "in": "header",
+            "required": false,
+            "description": "Synthetic scenario identifier, up to 80 ASCII letters, digits or hyphens. Omit for the default local scenario.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Updated synthetic scenario"
+          },
+          "400": {
+            "description": "Invalid session"
+          },
+          "403": {
+            "description": "Cross-origin mutation rejected"
+          },
+          "409": {
+            "description": "Command conflicts with current state"
+          },
+          "503": {
+            "description": "Storage unavailable"
+          }
+        }
+      }
+    },
+    "/v1/receipts/nw-B2/ack": {
+      "post": {
+        "summary": "Simulate a receipt acknowledgement",
+        "parameters": [
+          {
+            "name": "x-demo-session",
+            "in": "header",
+            "required": false,
+            "description": "Synthetic scenario identifier, up to 80 ASCII letters, digits or hyphens. Omit for the default local scenario.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Updated synthetic scenario"
+          },
+          "400": {
+            "description": "Invalid session"
+          },
+          "403": {
+            "description": "Cross-origin mutation rejected"
+          },
+          "409": {
+            "description": "Command conflicts with current state"
+          },
+          "503": {
+            "description": "Storage unavailable"
+          }
+        }
+      }
+    },
+    "/v1/holds/debrief/confirm": {
+      "post": {
+        "summary": "Confirm the synthetic hold",
+        "parameters": [
+          {
+            "name": "x-demo-session",
+            "in": "header",
+            "required": false,
+            "description": "Synthetic scenario identifier, up to 80 ASCII letters, digits or hyphens. Omit for the default local scenario.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Updated synthetic scenario"
+          },
+          "400": {
+            "description": "Invalid session"
+          },
+          "403": {
+            "description": "Cross-origin mutation rejected"
+          },
+          "409": {
+            "description": "Command conflicts with current state"
+          },
+          "503": {
+            "description": "Storage unavailable"
+          }
+        }
+      }
+    },
+    "/v1/support/mina/remove": {
+      "post": {
+        "summary": "Remove synthetic claim support",
+        "parameters": [
+          {
+            "name": "x-demo-session",
+            "in": "header",
+            "required": false,
+            "description": "Synthetic scenario identifier, up to 80 ASCII letters, digits or hyphens. Omit for the default local scenario.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Updated synthetic scenario"
+          },
+          "400": {
+            "description": "Invalid session"
+          },
+          "403": {
+            "description": "Cross-origin mutation rejected"
+          },
+          "409": {
+            "description": "Command conflicts with current state"
+          },
+          "503": {
+            "description": "Storage unavailable"
+          }
+        }
+      }
+    },
+    "/mcp": {
+      "post": {
+        "summary": "MCP Streamable HTTP endpoint; read-only synthetic tools",
+        "responses": {
+          "200": {
+            "description": "MCP JSON-RPC response"
+          }
+        }
+      }
+    }
+  }
+}

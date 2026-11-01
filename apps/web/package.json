@@ -4,7 +4,9 @@
   "scripts": {
     "dev": "next dev -p 3000",
     "build": "next build",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "build:wasm": "wasm-pack build ../../crates/record-wasm --target web --out-dir ../../apps/web/public/engine --release",
+    "prebuild": "npm run build:wasm"
   },
   "dependencies": {
     "@noble/curves": "^2.0.1",
@@ -18,6 +20,7 @@
     "@types/node": "^24.0.0",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
-    "typescript": "^5.9.0"
+    "typescript": "^5.9.0",
+    "wasm-pack": "^0.15.1"
   }
 }

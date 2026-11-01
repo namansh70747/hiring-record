@@ -8,3 +8,5 @@ apps/web/out
 !.env.example
 
 *.tsbuildinfo
+
+apps/web/public/engine

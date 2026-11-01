@@ -98,7 +98,7 @@ pub struct Receipt {
     pub acknowledged: bool,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct State {
     pub role_id: String,
     pub active: StandardVersion,
@@ -180,6 +180,8 @@ pub enum Rejection {
     ReceiptUnavailable(String),
     #[error("this action has already been recorded")]
     AlreadyRecorded,
+    #[error("the comparison baseline does not match the current role and proposal")]
+    BaselineMismatch,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -256,4 +258,11 @@ pub struct Report {
     pub role_id: String,
     pub standard_id: String,
     pub lines: Vec<ClaimLine>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Comparison {
+    pub path: String,
+    pub report: Report,
+    pub stale_assessments: usize,
 }

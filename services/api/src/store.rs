@@ -38,6 +38,17 @@ impl StoreError {
 }
 
 impl Store {
+    pub async fn healthy(&self) -> bool {
+        matches!(
+            tokio::time::timeout(
+                std::time::Duration::from_secs(2),
+                sqlx::query("SELECT 1").execute(&self.pool)
+            )
+            .await,
+            Ok(Ok(_))
+        )
+    }
+
     pub async fn connect(url: &str) -> Result<Self, sqlx::Error> {
         let pool = PgPoolOptions::new().max_connections(8).connect(url).await?;
         let mut tx = pool.begin().await?;
