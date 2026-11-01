@@ -14,5 +14,25 @@ services:
       interval: 2s
       timeout: 3s
       retries: 30
+  restate:
+    image: docker.restate.dev/restatedev/restate:1.7.13
+    # A fixed node name preserves the existing local journal across container recreation.
+    command: ["--node-name=cb727df5b498"]
+    ports:
+      - '127.0.0.1:19080:8080'
+      - '127.0.0.1:19070:9070'
+    extra_hosts:
+      - 'host.docker.internal:host-gateway'
+    volumes:
+      - hiring_record_restate:/restate-data
+  northwind:
+    build: ./services/northwind
+    environment:
+      RECORD_API_URL: http://host.docker.internal:8080
+    extra_hosts:
+      - 'host.docker.internal:host-gateway'
+    ports:
+      - '127.0.0.1:19090:9080'
 volumes:
   hiring_record_pg:
+  hiring_record_restate:

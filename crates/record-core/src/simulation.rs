@@ -2,7 +2,7 @@
 use crate::{apply, evaluate_report, evolve, hash_event, Command, State};
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, utoipa::ToSchema)]
 pub struct SimulationResult {
     pub seed: u64,
     pub rounds: usize,
@@ -10,7 +10,7 @@ pub struct SimulationResult {
     pub failures: Vec<String>,
     pub trace: Vec<SimulationStep>,
 }
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, utoipa::ToSchema)]
 pub struct SimulationStep {
     pub round: usize,
     pub path: String,
@@ -19,6 +19,7 @@ pub struct SimulationStep {
     pub event_count: usize,
     pub root: String,
     pub refusals: Vec<String>,
+    pub fault: String,
 }
 
 pub fn simulate(initial: &State, seed: u64, rounds: usize) -> Result<SimulationResult, String> {
@@ -42,7 +43,29 @@ pub fn simulate(initial: &State, seed: u64, rounds: usize) -> Result<SimulationR
         random ^= random << 17;
         let approved = random & 1 == 1;
         let ack = random & 2 == 2;
+        let fault = match (random >> 2) % 4 {
+            0 => "out-of-order acknowledgement",
+            1 => "duplicate decision delivery",
+            2 => "restart before acknowledgement",
+            _ => "delayed acknowledgement",
+        };
         let mut state = initial.clone();
+        if fault == "out-of-order acknowledgement" && state.receipts.is_empty() {
+            let before = state.clone();
+            let rejected = apply(
+                &mut state,
+                Command::Acknowledge {
+                    receipt_id: "nw-B2".into(),
+                },
+            )
+            .is_err();
+            check(
+                &mut result,
+                rejected && state == before,
+                round,
+                "out-of-order acknowledgement rejected",
+            );
+        }
         let command = if approved {
             Command::Approve {
                 proposal_id: "B".into(),
@@ -53,7 +76,25 @@ pub fn simulate(initial: &State, seed: u64, rounds: usize) -> Result<SimulationR
                 proposal_id: "B".into(),
             }
         };
-        apply(&mut state, command).map_err(|e| e.to_string())?;
+        apply(&mut state, command.clone()).map_err(|e| e.to_string())?;
+        if fault == "duplicate decision delivery" {
+            let before = state.clone();
+            let rejected = apply(&mut state, command).is_err();
+            check(
+                &mut result,
+                rejected && state == before,
+                round,
+                "duplicate decision rejected",
+            );
+        }
+        if fault == "restart before acknowledgement" {
+            let mut recovered = initial.clone();
+            for event in &state.events {
+                crate::replay_event(&mut recovered, event.clone()).map_err(|e| e.to_string())?;
+            }
+            check(&mut result, recovered == state, round, "restart recovery");
+            state = recovered;
+        }
         let stale = state
             .assessments
             .iter()
@@ -130,6 +171,7 @@ pub fn simulate(initial: &State, seed: u64, rounds: usize) -> Result<SimulationR
                     .iter()
                     .filter_map(|line| line.refusal.map(|code| code.as_str().to_owned()))
                     .collect(),
+                fault: fault.into(),
             });
         }
     }

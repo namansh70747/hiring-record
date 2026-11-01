@@ -43,6 +43,64 @@ fn main() -> ExitCode {
                 }
             }
         }
+        Some("simulate-json") => {
+            let seed = args.next().unwrap_or_else(|| "42".into()).parse::<u64>();
+            match seed {
+                Ok(seed) => match record_core::load_fixture(&record_core::fixture_path()).and_then(
+                    |fixture| {
+                        record_core::simulate(&record_core::state_from_fixture(&fixture), seed, 20)
+                    },
+                ) {
+                    Ok(result) => {
+                        println!(
+                            "{}",
+                            serde_json::to_string(&result).expect("simulation JSON")
+                        );
+                        ExitCode::SUCCESS
+                    }
+                    Err(error) => {
+                        eprintln!("{error}");
+                        ExitCode::from(1)
+                    }
+                },
+                Err(_) => {
+                    eprintln!("usage: record simulate-json [seed]");
+                    ExitCode::from(2)
+                }
+            }
+        }
+        Some("sweep") => {
+            let seeds = args.next().unwrap_or_else(|| "10000".into()).parse::<u64>();
+            let rounds = args.next().unwrap_or_else(|| "1".into()).parse::<usize>();
+            match (seeds, rounds) {
+                (Ok(seeds), Ok(rounds))
+                    if (1..=1_000_000).contains(&seeds) && (1..=100).contains(&rounds) =>
+                {
+                    let result = record_core::load_fixture(&record_core::fixture_path()).and_then(|fixture| {
+                        let initial = record_core::state_from_fixture(&fixture);
+                        let mut checks = 0;
+                        for seed in 0..seeds {
+                            let result = record_core::simulate(&initial, seed, rounds)?;
+                            checks += result.checks;
+                            if !result.failures.is_empty() { return Err(format!("seed {seed}: {:?}", result.failures)); }
+                        }
+                        println!("PASS: {seeds} seeds, {rounds} rounds each, {checks} invariant checks");
+                        Ok(())
+                    });
+                    match result {
+                        Ok(()) => ExitCode::SUCCESS,
+                        Err(error) => {
+                            eprintln!("{error}");
+                            ExitCode::from(1)
+                        }
+                    }
+                }
+                _ => {
+                    eprintln!("usage: record sweep [seeds 1..1000000] [rounds 1..100]");
+                    ExitCode::from(2)
+                }
+            }
+        }
         Some("simulate") => {
             let seed = args.next().unwrap_or_else(|| "42".into()).parse::<u64>();
             let rounds = args.next().unwrap_or_else(|| "100".into()).parse::<usize>();

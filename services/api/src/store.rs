@@ -1,6 +1,6 @@
 //! Optional PostgreSQL storage for synthetic demo event streams.
 //! Resets advance a generation; prior events remain in the database.
-use record_core::{evolve, hash_event, Event, State};
+use record_core::{hash_event, replay_event, Event, State};
 use sqlx::{postgres::PgPoolOptions, PgPool, Row};
 
 use crate::fresh;
@@ -15,6 +15,7 @@ pub enum StoreError {
     Database(sqlx::Error),
     Corrupt,
     Conflict,
+    Capacity,
 }
 impl From<sqlx::Error> for StoreError {
     fn from(value: sqlx::Error) -> Self {
@@ -25,6 +26,7 @@ impl StoreError {
     pub fn status(&self) -> axum::http::StatusCode {
         match self {
             Self::Conflict => axum::http::StatusCode::CONFLICT,
+            Self::Capacity => axum::http::StatusCode::TOO_MANY_REQUESTS,
             Self::Database(error) => {
                 eprintln!("demo storage unavailable: {error}");
                 axum::http::StatusCode::SERVICE_UNAVAILABLE
@@ -69,17 +71,72 @@ impl Store {
                 .execute(&mut *tx)
                 .await?;
         }
+        let applied: bool = sqlx::query_scalar(
+            "SELECT EXISTS (SELECT 1 FROM hr_schema_migrations WHERE version = 2)",
+        )
+        .fetch_one(&mut *tx)
+        .await?;
+        if !applied {
+            sqlx::raw_sql(include_str!("../migrations/0002_request_results.sql"))
+                .execute(&mut *tx)
+                .await?;
+            sqlx::query("INSERT INTO hr_schema_migrations (version) VALUES (2)")
+                .execute(&mut *tx)
+                .await?;
+        }
+        let applied: bool = sqlx::query_scalar(
+            "SELECT EXISTS (SELECT 1 FROM hr_schema_migrations WHERE version = 3)",
+        )
+        .fetch_one(&mut *tx)
+        .await?;
+        if !applied {
+            sqlx::raw_sql(include_str!("../migrations/0003_workflow_outbox.sql"))
+                .execute(&mut *tx)
+                .await?;
+            sqlx::query("INSERT INTO hr_schema_migrations (version) VALUES (3)")
+                .execute(&mut *tx)
+                .await?;
+        }
+        let applied: bool = sqlx::query_scalar(
+            "SELECT EXISTS (SELECT 1 FROM hr_schema_migrations WHERE version = 4)",
+        )
+        .fetch_one(&mut *tx)
+        .await?;
+        if !applied {
+            sqlx::raw_sql(include_str!("../migrations/0004_role_baselines.sql"))
+                .execute(&mut *tx)
+                .await?;
+            sqlx::query("INSERT INTO hr_schema_migrations (version) VALUES (4)")
+                .execute(&mut *tx)
+                .await?;
+        }
         tx.commit().await?;
         Ok(Self { pool })
     }
     pub async fn load(&self, id: &str) -> Result<(i64, State), StoreError> {
         let mut tx = self.pool.begin().await?;
+        let exists: bool =
+            sqlx::query_scalar("SELECT EXISTS (SELECT 1 FROM hr_demo_streams WHERE session_id=$1)")
+                .bind(id)
+                .fetch_one(&mut *tx)
+                .await?;
+        if !exists {
+            sqlx::query("SELECT pg_advisory_xact_lock(481715903)")
+                .execute(&mut *tx)
+                .await?;
+            let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM hr_demo_streams")
+                .fetch_one(&mut *tx)
+                .await?;
+            if count >= 1000 {
+                return Err(StoreError::Capacity);
+            }
+        }
         sqlx::query("INSERT INTO hr_demo_streams (session_id) VALUES ($1) ON CONFLICT DO NOTHING")
             .bind(id)
             .execute(&mut *tx)
             .await?;
         let row = sqlx::query(
-            "SELECT generation, sequence FROM hr_demo_streams WHERE session_id = $1 FOR SHARE",
+            "SELECT generation, sequence, baseline FROM hr_demo_streams WHERE session_id = $1 FOR SHARE",
         )
         .bind(id)
         .fetch_one(&mut *tx)
@@ -90,7 +147,8 @@ impl Store {
         if sequence < 0 || rows.len() != sequence as usize {
             return Err(StoreError::Corrupt);
         }
-        let mut state = fresh();
+        let baseline: Option<sqlx::types::Json<State>> = row.try_get("baseline")?;
+        let mut state = baseline.map(|v| v.0).unwrap_or_else(fresh);
         let mut previous = "genesis".to_string();
         for (index, row) in rows.iter().enumerate() {
             let sqlx::types::Json(event): sqlx::types::Json<Event> = row.try_get("event")?;
@@ -101,11 +159,59 @@ impl Store {
                 return Err(StoreError::Corrupt);
             }
             previous.clone_from(&event.hash);
-            evolve(&mut state, event);
+            replay_event(&mut state, event).map_err(|_| StoreError::Corrupt)?;
         }
         tx.commit().await?;
         Ok((generation, state))
     }
+    pub async fn exists(&self, id: &str) -> Result<bool, StoreError> {
+        Ok(
+            sqlx::query_scalar("SELECT EXISTS (SELECT 1 FROM hr_demo_streams WHERE session_id=$1)")
+                .bind(id)
+                .fetch_one(&self.pool)
+                .await?,
+        )
+    }
+    pub async fn role_ids(&self, session: &str) -> Result<Vec<String>, StoreError> {
+        let prefix = format!("{session}~");
+        let rows:Vec<String>=sqlx::query_scalar("SELECT session_id FROM hr_demo_streams WHERE session_id LIKE $1 ORDER BY session_id LIMIT 20").bind(format!("{prefix}%")).fetch_all(&self.pool).await?;
+        Ok(rows
+            .into_iter()
+            .filter_map(|id| id.strip_prefix(&prefix).map(str::to_owned))
+            .collect())
+    }
+    pub async fn ensure_role(&self, id: &str, session: &str) -> Result<(), StoreError> {
+        let mut tx = self.pool.begin().await?;
+        sqlx::query("SELECT pg_advisory_xact_lock(481715903)")
+            .execute(&mut *tx)
+            .await?;
+        let exists: bool =
+            sqlx::query_scalar("SELECT EXISTS (SELECT 1 FROM hr_demo_streams WHERE session_id=$1)")
+                .bind(id)
+                .fetch_one(&mut *tx)
+                .await?;
+        if !exists {
+            let total: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM hr_demo_streams")
+                .fetch_one(&mut *tx)
+                .await?;
+            let count: i64 =
+                sqlx::query_scalar("SELECT COUNT(*) FROM hr_demo_streams WHERE session_id LIKE $1")
+                    .bind(format!("{session}~%"))
+                    .fetch_one(&mut *tx)
+                    .await?;
+            if total >= 1000 || count >= 20 {
+                return Err(StoreError::Capacity);
+            }
+            sqlx::query("INSERT INTO hr_demo_streams(session_id,baseline) VALUES($1,$2)")
+                .bind(id)
+                .bind(sqlx::types::Json(State::empty()))
+                .execute(&mut *tx)
+                .await?;
+        }
+        tx.commit().await?;
+        Ok(())
+    }
+    #[cfg(test)]
     pub async fn append(&self, id: &str, generation: i64, event: &Event) -> Result<(), StoreError> {
         let mut tx = self.pool.begin().await?;
         let updated = sqlx::query("UPDATE hr_demo_streams SET sequence = sequence + 1 WHERE session_id = $1 AND generation = $2 AND sequence = $3")
@@ -118,6 +224,120 @@ impl Store {
         tx.commit().await?;
         Ok(())
     }
+    pub async fn cached(
+        &self,
+        id: &str,
+        key: &str,
+        fingerprint: &str,
+    ) -> Result<Option<serde_json::Value>, StoreError> {
+        let row = sqlx::query("SELECT fingerprint, response FROM hr_request_results WHERE session_id=$1 AND request_key=$2")
+            .bind(id).bind(key).fetch_optional(&self.pool).await?;
+        match row {
+            Some(row) if row.try_get::<String, _>("fingerprint")? == fingerprint => {
+                Ok(Some(row.try_get("response")?))
+            }
+            Some(_) => Err(StoreError::Conflict),
+            None => Ok(None),
+        }
+    }
+    pub async fn append_once(
+        &self,
+        id: &str,
+        generation: i64,
+        event: &Event,
+        key: &str,
+        fingerprint: &str,
+        response: serde_json::Value,
+    ) -> Result<serde_json::Value, StoreError> {
+        let mut tx = self.pool.begin().await?;
+        sqlx::query("SELECT session_id FROM hr_demo_streams WHERE session_id=$1 FOR UPDATE")
+            .bind(id)
+            .fetch_one(&mut *tx)
+            .await?;
+        if let Some(row)=sqlx::query("SELECT fingerprint,response FROM hr_request_results WHERE session_id=$1 AND request_key=$2").bind(id).bind(key).fetch_optional(&mut *tx).await? {
+            if row.try_get::<String,_>("fingerprint")? != fingerprint { return Err(StoreError::Conflict); }
+            return Ok(row.try_get("response")?);
+        }
+        let count: i64 =
+            sqlx::query_scalar("SELECT COUNT(*) FROM hr_request_results WHERE session_id=$1")
+                .bind(id)
+                .fetch_one(&mut *tx)
+                .await?;
+        if count >= 200 {
+            return Err(StoreError::Capacity);
+        }
+        let updated=sqlx::query("UPDATE hr_demo_streams SET sequence=sequence+1 WHERE session_id=$1 AND generation=$2 AND sequence=$3").bind(id).bind(generation).bind(event.seq as i64-1).execute(&mut *tx).await?;
+        if updated.rows_affected() != 1 {
+            return Err(StoreError::Conflict);
+        }
+        sqlx::query("INSERT INTO hr_demo_events (session_id,generation,sequence,event) VALUES ($1,$2,$3,$4)").bind(id).bind(generation).bind(event.seq as i64).bind(sqlx::types::Json(event)).execute(&mut *tx).await?;
+        sqlx::query("INSERT INTO hr_request_results (session_id,request_key,fingerprint,response) VALUES ($1,$2,$3,$4)").bind(id).bind(key).bind(fingerprint).bind(&response).execute(&mut *tx).await?;
+        if event.kind == record_core::EventKind::StandardApproved
+            || (event.kind == record_core::EventKind::DomainCommandV2
+                && event.payload.contains("accept_quote"))
+        {
+            let snapshot: serde_json::Value = response.clone();
+            if let Some(receipts) = snapshot["receipts"].as_array() {
+                for receipt in receipts.iter().rev().take(1) {
+                    if let Some(receipt_id) = receipt["id"].as_str() {
+                        let workflow_id = format!("{id}-{generation}-{}", event.seq);
+                        sqlx::query("INSERT INTO hr_workflow_outbox(workflow_id,session_id,generation,receipt_id) VALUES($1,$2,$3,$4) ON CONFLICT DO NOTHING")
+                            .bind(workflow_id).bind(id).bind(generation).bind(receipt_id).execute(&mut *tx).await?;
+                    }
+                }
+            }
+        }
+        tx.commit().await?;
+        Ok(response)
+    }
+    pub async fn pending_workflows(&self) -> Result<Vec<serde_json::Value>, StoreError> {
+        let rows=sqlx::query("SELECT workflow_id,session_id,generation,receipt_id FROM hr_workflow_outbox WHERE NOT dispatched ORDER BY created_at LIMIT 10").fetch_all(&self.pool).await?;
+        rows.into_iter().map(|r| Ok(serde_json::json!({"workflow_id":r.try_get::<String,_>("workflow_id")?,"session_id":r.try_get::<String,_>("session_id")?,"generation":r.try_get::<i64,_>("generation")?,"receipt_id":r.try_get::<String,_>("receipt_id")?,"delay_ms":15000}))).collect()
+    }
+    pub async fn record_dispatch(&self, id: &str, error: Option<&str>) -> Result<(), StoreError> {
+        sqlx::query("UPDATE hr_workflow_outbox SET attempts=attempts+1,dispatched=$2,last_error=$3 WHERE workflow_id=$1").bind(id).bind(error.is_none()).bind(error).execute(&self.pool).await?;
+        Ok(())
+    }
+    pub async fn workflows(&self, id: &str) -> Result<serde_json::Value, StoreError> {
+        let rows=sqlx::query("SELECT workflow_id,generation,receipt_id,dispatched,attempts,last_error FROM hr_workflow_outbox WHERE session_id=$1 ORDER BY created_at DESC LIMIT 20").bind(id).fetch_all(&self.pool).await?;
+        let values:Result<Vec<_>,sqlx::Error>=rows.iter().map(|r|Ok(serde_json::json!({"workflow_id":r.try_get::<String,_>("workflow_id")?,"generation":r.try_get::<i64,_>("generation")?,"receipt_id":r.try_get::<String,_>("receipt_id")?,"dispatched":r.try_get::<bool,_>("dispatched")?,"attempts":r.try_get::<i32,_>("attempts")?,"last_error":r.try_get::<Option<String>,_>("last_error")?}))).collect();
+        Ok(serde_json::json!({"mode":"durable outbox","workflows":values?}))
+    }
+    pub async fn reset_once(
+        &self,
+        id: &str,
+        generation: i64,
+        sequence: usize,
+        key: &str,
+        fingerprint: &str,
+        response: serde_json::Value,
+    ) -> Result<serde_json::Value, StoreError> {
+        let mut tx = self.pool.begin().await?;
+        sqlx::query("SELECT session_id FROM hr_demo_streams WHERE session_id=$1 FOR UPDATE")
+            .bind(id)
+            .fetch_one(&mut *tx)
+            .await?;
+        if let Some(row)=sqlx::query("SELECT fingerprint,response FROM hr_request_results WHERE session_id=$1 AND request_key=$2").bind(id).bind(key).fetch_optional(&mut *tx).await? {
+            if row.try_get::<String,_>("fingerprint")?!=fingerprint {return Err(StoreError::Conflict);}
+            return Ok(row.try_get("response")?);
+        }
+        let count: i64 =
+            sqlx::query_scalar("SELECT COUNT(*) FROM hr_request_results WHERE session_id=$1")
+                .bind(id)
+                .fetch_one(&mut *tx)
+                .await?;
+        if count >= 200 {
+            return Err(StoreError::Capacity);
+        }
+        let update=sqlx::query("UPDATE hr_demo_streams SET generation=generation+1,sequence=0 WHERE session_id=$1 AND generation=$2 AND sequence=$3").bind(id).bind(generation).bind(sequence as i64).execute(&mut *tx).await?;
+        if update.rows_affected() != 1 {
+            return Err(StoreError::Conflict);
+        }
+        sqlx::query("INSERT INTO hr_request_results(session_id,request_key,fingerprint,response) VALUES($1,$2,$3,$4)").bind(id).bind(key).bind(fingerprint).bind(&response).execute(&mut *tx).await?;
+        tx.commit().await?;
+        Ok(response)
+    }
+    #[cfg(test)]
     pub async fn reset(&self, id: &str) -> Result<(), StoreError> {
         sqlx::query("INSERT INTO hr_demo_streams (session_id, generation, sequence) VALUES ($1, 0, 0) ON CONFLICT (session_id) DO UPDATE SET generation = hr_demo_streams.generation + 1, sequence = 0")
             .bind(id).execute(&self.pool).await?;

@@ -3,12 +3,17 @@ import { readFile } from 'node:fs/promises';
 import init, { compare_other_path, evaluate_report } from '../apps/web/public/engine/record_wasm.js';
 
 const base = process.env.RECORD_BASE_URL || 'http://127.0.0.1:8080';
-const headers = { 'x-demo-session': `wasm-parity-${Date.now()}` };
+const headers = {};
+let version = '0:0';
 await init({ module_or_path: await readFile(new URL('../apps/web/public/engine/record_wasm_bg.wasm', import.meta.url)) });
 async function get(path, method = 'GET') {
-  const response = await fetch(base + path, { method, headers });
+  const response = await fetch(base + path, { method, headers: { ...headers, 'Idempotency-Key': crypto.randomUUID(), 'If-Match': version } });
+  const cookie = response.headers.get('set-cookie');
+  if (cookie) headers.cookie = cookie.split(';')[0];
   if (!response.ok) throw new Error(`${path}: HTTP ${response.status}`);
-  return response.json();
+  const result = await response.json();
+  if (result.version) version = result.version;
+  return result;
 }
 for (const stage of ['initial', 'approved']) {
   const view = await get('/v1/roles/sept/view');

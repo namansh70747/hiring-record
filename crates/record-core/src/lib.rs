@@ -9,9 +9,11 @@ mod model;
 mod report;
 mod simulation;
 
-pub use bundle::{create_bundle, verify_bundle, Bundle, BundlePayload, Verification};
+pub use bundle::{
+    create_bundle, verify_bundle, Bundle, BundlePayload, SourceReference, Verification,
+};
 pub use engine::{
-    apply, compare_other_path, counterfactual_approve, decide, evolve, preview_change,
+    apply, compare_other_path, counterfactual_approve, decide, evolve, preview_change, replay_event,
 };
 pub use model::*;
 pub use report::evaluate_report;
@@ -56,6 +58,9 @@ pub fn state_from_fixture(fixture: &Fixture) -> State {
         quote_declined: false,
         link_operations: vec![],
         events: vec![],
+        facts: vec![],
+        overrides: vec![],
+        quotes: vec![],
     }
 }
 

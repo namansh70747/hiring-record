@@ -1,0 +1,1 @@
+{"name":"hiring-record-northwind","private":true,"type":"module","scripts":{"start":"node index.mjs"},"dependencies":{"@restatedev/restate-sdk":"1.18.1"}}

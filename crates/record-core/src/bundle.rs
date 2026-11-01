@@ -4,7 +4,7 @@ use crate::{evaluate_report, hash_event, Event, Report, State};
 use ed25519_dalek::{Signature, Signer, SigningKey, Verifier, VerifyingKey};
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct BundlePayload {
     pub format: String,
     pub role_id: String,
@@ -12,9 +12,19 @@ pub struct BundlePayload {
     pub report: Report,
     pub events: Vec<Event>,
     pub disclosure: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub source_references: Vec<SourceReference>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
+pub struct SourceReference {
+    pub id: String,
+    pub person: String,
+    pub kind: String,
+    pub timestamp: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct Bundle {
     pub format: String,
     pub algorithm: String,
@@ -34,12 +44,13 @@ pub struct Verification {
 
 pub fn create_bundle(state: &State, signing_key: &SigningKey) -> Result<Bundle, String> {
     let payload = BundlePayload {
-        format: "hiring-record-payload/v1".into(),
+        format: "hiring-record-payload/v2".into(),
         role_id: state.role_id.clone(),
         standard_id: state.active.id.clone(),
         report: evaluate_report(state),
         events: state.events.clone(),
-        disclosure: "Synthetic demo. Signature authenticates these bytes against the included key; source evidence is not included.".into(),
+        disclosure: "Synthetic demo. Signature authenticates these bytes against the included key; source references are included, but source documents and truth are not verified.".into(),
+        source_references: state.sources.iter().map(|source| SourceReference { id:source.id.clone(), person:source.person.clone(), kind:source.kind.clone(), timestamp:source.timestamp.clone() }).collect(),
     };
     let payload = serde_json::to_string(&payload).map_err(|e| e.to_string())?;
     let signature = signing_key.sign(payload.as_bytes());
@@ -73,7 +84,8 @@ pub fn verify_bundle(bundle: &Bundle, trusted_key: Option<&str>) -> Result<Verif
         .is_ok();
     let payload: BundlePayload =
         serde_json::from_str(&bundle.payload).map_err(|_| "Invalid payload JSON")?;
-    if payload.format != "hiring-record-payload/v1" {
+    if payload.format != "hiring-record-payload/v1" && payload.format != "hiring-record-payload/v2"
+    {
         return Err("Unsupported payload format".into());
     }
     let mut previous = "genesis".to_string();

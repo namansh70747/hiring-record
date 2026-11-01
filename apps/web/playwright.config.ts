@@ -1,0 +1,2 @@
+import { defineConfig, devices } from '@playwright/test';
+export default defineConfig({testDir:'./tests',timeout:30_000,fullyParallel:true,use:{baseURL:process.env.RECORD_BASE_URL||'http://127.0.0.1:8080',trace:'retain-on-failure'},projects:[{name:'desktop',use:{...devices['Desktop Chrome'],viewport:{width:1280,height:720}}},{name:'mobile',use:{...devices['iPhone 13'],defaultBrowserType:'chromium'}}]});

@@ -10,15 +10,21 @@ use record_core::{apply, evaluate_report, Command, State};
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct ScenarioArgs {
-    /// Optional synthetic browser session ID. If omitted, returns a reproducible approved example.
+    /// Must be omitted. Browser scenarios are private; tools read the shared synthetic example.
     pub session_id: Option<String>,
 }
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct RefusalArgs {
     /// A refusal code such as R-AFTER-HIRE or R-REJECTS-MET.
     pub code: String,
-    /// Optional synthetic browser session ID. If omitted, returns a reproducible approved example.
+    /// Must be omitted. Browser scenarios are private; tools read the shared synthetic example.
     pub session_id: Option<String>,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct VerifyArgs {
+    pub bundle_json: String,
+    pub trusted_key: Option<String>,
 }
 
 #[derive(Clone)]
@@ -31,22 +37,8 @@ impl RecordTools {
         Self { app }
     }
     async fn scenario(&self, id: Option<String>) -> Result<State, ErrorData> {
-        if let Some(id) = id {
-            if id.is_empty()
-                || id.len() > 80
-                || !id.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-')
-            {
-                return Err(ErrorData::invalid_params(
-                    "Invalid synthetic session ID",
-                    None,
-                ));
-            }
-            return self
-                .app
-                .read_scenario(&id)
-                .await
-                .map(|(_, state)| state)
-                .map_err(|_| ErrorData::internal_error("Synthetic scenario unavailable", None));
+        if id.is_some() {
+            return Err(ErrorData::invalid_params("Browser scenarios are private. Omit session_id to inspect the shared synthetic example.", None));
         }
         let mut state = fresh();
         apply(
@@ -63,6 +55,25 @@ impl RecordTools {
 
 #[tool_router]
 impl RecordTools {
+    #[tool(
+        description = "Verify a signed synthetic JSON bundle: checks signature, event chain and optionally a trusted public key. Does not establish source accuracy."
+    )]
+    async fn verify_report(
+        &self,
+        Parameters(args): Parameters<VerifyArgs>,
+    ) -> Result<String, ErrorData> {
+        if args.bundle_json.len() > 1_000_000 {
+            return Err(ErrorData::invalid_params(
+                "Bundle exceeds 1 MB MCP limit",
+                None,
+            ));
+        }
+        let bundle: record_core::Bundle = serde_json::from_str(&args.bundle_json)
+            .map_err(|_| ErrorData::invalid_params("Invalid bundle JSON", None))?;
+        let result = record_core::verify_bundle(&bundle, args.trusted_key.as_deref())
+            .map_err(|e| ErrorData::invalid_params(e, None))?;
+        Ok(serde_json::json!({"signature_valid":result.signature_valid,"chain_valid":result.chain_valid,"trusted_signer":result.trusted_signer,"event_count":result.event_count,"role_id":result.role_id}).to_string())
+    }
     #[tool(description = "Check readiness. This server is local, synthetic and read-only.")]
     async fn connection_check(&self) -> String {
         serde_json::json!({"connected":true,"ready":self.app.ready().await,"data":"synthetic","writes":false,"scope":"local demo"}).to_string()
@@ -137,6 +148,6 @@ impl RecordTools {
 #[tool_handler(
     name = "hiring-record",
     version = "0.2.0",
-    instructions = "Read-only synthetic hiring scenario. Omit session_id for the approved example, or provide the browser's synthetic session ID. No real candidates or write tools."
+    instructions = "Read-only synthetic hiring scenario. Omit session_id for the approved example. Browser scenarios are private. No real candidates or write tools."
 )]
 impl ServerHandler for RecordTools {}

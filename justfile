@@ -4,7 +4,8 @@ local_db := "postgres://hiring_record:local_demo_only@127.0.0.1:55432/hiring_rec
 
 # Build the frontend, start PostgreSQL and run the demo on localhost:8080.
 up: web db
-    DATABASE_URL={{local_db}} cargo run -p record-api
+    ./scripts/register-workflow.sh
+    DATABASE_URL={{local_db}} RESTATE_INGRESS=http://127.0.0.1:19080 cargo run -p record-api
 
 # Run the same experience without Docker; sessions reset when the server stops.
 memory: web
@@ -17,7 +18,7 @@ web:
 db:
     docker compose -p hiring-record up -d --wait
 
-# Stop only this project's PostgreSQL container; its volume is retained.
+# Stop this project’s containers; their data volumes are retained.
 down:
     docker compose -p hiring-record stop
 
@@ -42,3 +43,23 @@ smoke:
 # Compare WASM and API results against a running local server after building the web app.
 wasm-parity:
     node scripts/wasm-parity.mjs
+
+# Verify the real synthetic outbox and Restate workflow against the running stack.
+workflow-smoke:
+    RESTART_NORTHWIND=1 python3 scripts/workflow-smoke.py
+
+# Bounded model check; requires Java and access to the Apalache distribution.
+spec:
+    npx --yes @informalsystems/quint@0.33.1 verify spec/record.qnt --invariant=safety --max-steps=20
+
+e2e:
+    npm run test:e2e --prefix apps/web
+
+generate-api:
+    npm run generate:api --prefix apps/web
+
+model-traces:
+    python3 scripts/validate-model-traces.py
+
+sim-sweep seeds="10000" rounds="1":
+    cargo run -q -p record-cli -- sweep {{seeds}} {{rounds}}

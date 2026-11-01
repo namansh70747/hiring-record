@@ -32,3 +32,42 @@ a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible
 .print-integrity code { font-size: 14px; }
 .print-report footer { margin-top: 48px; border-top: 1px solid #bec9bf; padding-top: 16px; }
 @media print { .report-nav, .report-actions { display: none; } .print-report { padding: 0; } .print-report header { padding-top: 0; } }
+.workbench { margin: 44px 0; border-top: 1px solid #bbc8bb; padding-top: 28px; }
+.workbench-grid { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 20px; }
+.workbench-grid article { background: #fff; border: 1px solid #becbbe; padding: 22px; min-width: 0; }
+.workbench h3 { font-size: 20px; }
+.workbench p { font-size: 16px; line-height: 1.65; }
+.workbench label { display: block; font-weight: 600; margin: 14px 0; }
+.workbench input, .workbench select, .workbench textarea { display: block; width: 100%; padding: 10px; min-height: 44px; border: 1px solid #6e8172; background: #fff; color: #24362a; font: inherit; margin-top: 6px; }
+.workbench-person { max-width: 320px; }
+.workbench button { background: #263e2d; color: white; border: 0; padding: 10px 16px; margin: 4px 8px 4px 0; }
+.workbench-item { border-top: 1px solid #becbbe; padding: 15px 0; margin-top: 15px; overflow-wrap: anywhere; }
+.workbench-item small { display: block; font-size: 14px; }
+@media(max-width:1000px) { .workbench-grid { grid-template-columns:1fr; } }
+.workspace-tools { display:flex; gap:10px; justify-content:flex-end; flex-wrap:wrap; }
+.workspace-tools button { background:#fff; color:#263e2d; border:1px solid #aebcaf; padding:8px 12px; }
+.workspace-tools kbd, .command-list kbd { font:inherit; color:#53685a; margin-left:8px; }
+.guide-card { margin:20px 0; padding:18px 20px; background:#e6efe3; border:1px solid #a7baa8; color:#253c2b; }
+.guide-card p { margin:6px 0; }
+.guide-card a { text-decoration:underline; font-weight:600; }
+.command-palette { width:min(560px,94vw); max-height:85vh; overflow:auto; background:#fff; color:#24362a; padding:24px; box-shadow:0 20px 80px #1116; }
+.command-palette .dialog-top { display:flex; align-items:center; justify-content:space-between; }
+.command-list { display:grid; gap:6px; }
+.command-list button, .command-list a { display:flex; align-items:center; justify-content:space-between; min-height:44px; padding:10px 12px; background:#f3f6f1; color:#24362a; border:1px solid #d2ded2; text-align:left; }
+/* High-contrast text tokens, including metadata and status labels. */
+:is(.studio-main, .lab-main, .verify-main, .intro-section, .principles) :is(p,span,small,b,strong,em,code,h1,h2,h3,h4,label,button,a,div) { color: #263c2c !important; }
+:is(.studio-main, .lab-main, .verify-main) :is(.dark-button,.approve-button,.effect-card-dark,.toast,.developer-card,.developer-code,.dev-code,.lab-run,.dropzone button,.verify-bottom a,.workbench button,.compare-foot button),
+:is(.studio-main, .lab-main, .verify-main) :is(.dark-button,.approve-button,.effect-card-dark,.toast,.developer-card,.developer-code,.dev-code,.lab-run,.dropzone button,.verify-bottom a,.workbench button,.compare-foot button) :is(p,span,small,b,strong,em,code,h1,h2,h3,h4,label,button,a,div) { color: #f4f8f2 !important; }
+:is(.intro-section,.principles) :is(.mini-window-bar,.mini-proposal-actions b),
+:is(.intro-section,.principles) :is(.mini-window-bar,.mini-proposal-actions b) * { color:#f4f8f2 !important; }
+.story-section :is(.dark-index,.feature-visual) :is(p,span,small,b,strong,em,div) { color:#edf5eb !important; }
+.story-section .feature-paper :is(p,span,small,b,strong,em,div) { color:#263c2c !important; }
+.announcement-right,.studio-breadcrumb > span { color:#c8d6c8 !important; }
+
+.fault-label { display:block; font-size:14px; line-height:1.4; margin-top:4px; }
+
+.compare-exclusions { padding:14px; border:1px solid #bccabc; background:#f4f7f1; color:#263c2c; }
+.compare-exclusions p { font-size:14px; margin:6px 0 0; }
+:is(.person-drawer,.compare-dialog,.command-palette) :is(p,span,small,b,strong,em,code,h1,h2,h3,h4,label,button,a,div,blockquote) { color:#263c2c !important; }
+:is(.person-drawer,.compare-dialog,.command-palette) .compare-foot button,
+:is(.person-drawer,.compare-dialog,.command-palette) .compare-foot button * { color:#f4f8f2 !important; }

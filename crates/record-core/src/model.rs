@@ -1,13 +1,13 @@
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct StandardVersion {
     pub id: String,
     pub effective_at: String,
     pub criteria: Vec<Criterion>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct Criterion {
     pub id: String,
     pub text: String,
@@ -15,21 +15,21 @@ pub struct Criterion {
     pub added_by: String,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct Person {
     pub id: String,
     pub name: String,
     pub place: String,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum Outcome {
     Hire,
     Reject,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct Decision {
     pub person: String,
     pub outcome: Outcome,
@@ -37,14 +37,14 @@ pub struct Decision {
     pub version: String,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct Evidence {
     pub person: String,
     pub criterion: String,
     pub met: bool,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct Assessment {
     pub id: String,
     pub person: String,
@@ -54,7 +54,7 @@ pub struct Assessment {
     pub citation: Option<String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct SourceMoment {
     pub id: String,
     pub person: String,
@@ -63,14 +63,14 @@ pub struct SourceMoment {
     pub quote: String,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct InterviewBinding {
     pub person: String,
     pub rubric_version: String,
     pub status: String,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum ProposalStatus {
     Open,
@@ -78,7 +78,7 @@ pub enum ProposalStatus {
     Approved,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct Proposal {
     pub id: String,
     pub base: String,
@@ -91,14 +91,39 @@ fn open_status() -> ProposalStatus {
     ProposalStatus::Open
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct Receipt {
     pub id: String,
     pub label: String,
     pub acknowledged: bool,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, utoipa::ToSchema)]
+pub struct SourcedFact {
+    pub id: String,
+    pub person: String,
+    pub key: String,
+    pub value: String,
+    pub source_id: String,
+}
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, utoipa::ToSchema)]
+pub struct DecisionOverride {
+    pub id: String,
+    pub person: String,
+    pub outcome: Outcome,
+    pub reason: String,
+    pub at: String,
+}
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, utoipa::ToSchema)]
+pub struct Quote {
+    pub id: String,
+    pub person: String,
+    pub amount_minor: u64,
+    pub currency: String,
+    pub status: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct State {
     pub role_id: String,
     pub active: StandardVersion,
@@ -115,17 +140,97 @@ pub struct State {
     pub quote_declined: bool,
     pub link_operations: Vec<String>,
     pub events: Vec<Event>,
+    #[serde(default)]
+    pub facts: Vec<SourcedFact>,
+    #[serde(default)]
+    pub overrides: Vec<DecisionOverride>,
+    #[serde(default)]
+    pub quotes: Vec<Quote>,
 }
 
 impl State {
+    /// Starting point for a new synthetic role; opening it is itself an event.
+    pub fn empty() -> Self {
+        Self {
+            role_id: String::new(),
+            active: StandardVersion {
+                id: String::new(),
+                effective_at: String::new(),
+                criteria: vec![],
+            },
+            people: vec![],
+            decisions: vec![],
+            evidence: vec![],
+            assessments: vec![],
+            sources: vec![],
+            interviews: vec![],
+            proposals: vec![],
+            receipts: vec![],
+            hold_confirmed: false,
+            support_present: true,
+            quote_declined: false,
+            link_operations: vec![],
+            events: vec![],
+            facts: vec![],
+            overrides: vec![],
+            quotes: vec![],
+        }
+    }
     pub fn is_stale(&self, assessment: &Assessment) -> bool {
         assessment.version != self.active.id
     }
+
+    /// The most recent assessment for each person and criterion; historical scores remain in the log.
+    pub fn latest_assessments(&self) -> Vec<&Assessment> {
+        let mut seen = std::collections::HashSet::new();
+        self.assessments
+            .iter()
+            .rev()
+            .filter(|assessment| seen.insert((&assessment.person, &assessment.criterion)))
+            .collect()
+    }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum Command {
+    OpenRole {
+        role_id: String,
+        standard: StandardVersion,
+    },
+    AddPerson {
+        person: Person,
+    },
+    Propose {
+        proposal: Proposal,
+    },
+    RecordSource {
+        source: SourceMoment,
+    },
+    Assess {
+        assessment: Assessment,
+    },
+    RecordFact {
+        fact: SourcedFact,
+    },
+    RecordDecision {
+        decision: Decision,
+    },
+    OverrideDecision {
+        decision_override: DecisionOverride,
+    },
+    BindInterview {
+        binding: InterviewBinding,
+    },
+    OfferQuote {
+        quote: Quote,
+    },
+    AcceptQuote {
+        quote_id: String,
+    },
+    DeclineQuote {
+        quote_id: String,
+    },
     Dismiss {
         proposal_id: String,
     },
@@ -140,8 +245,9 @@ pub enum Command {
     RemoveSupport,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, utoipa::ToSchema)]
 pub enum EventKind {
+    DomainCommandV2,
     ProposalDismissed,
     StandardApproved,
     ReceiptAcknowledged,
@@ -152,6 +258,7 @@ pub enum EventKind {
 impl EventKind {
     pub fn as_str(self) -> &'static str {
         match self {
+            EventKind::DomainCommandV2 => "domain_command_v2",
             EventKind::ProposalDismissed => "proposal_dismissed",
             EventKind::StandardApproved => "standard_approved",
             EventKind::ReceiptAcknowledged => "receipt_acknowledged",
@@ -161,7 +268,7 @@ impl EventKind {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct Event {
     pub seq: u64,
     pub kind: EventKind,
@@ -172,6 +279,8 @@ pub struct Event {
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum Rejection {
+    #[error("invalid command: {0}")]
+    Invalid(String),
     #[error("proposal {0} is not open")]
     ProposalNotOpen(String),
     #[error("proposal {0} was not found")]
@@ -184,7 +293,7 @@ pub enum Rejection {
     BaselineMismatch,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct ImpactPreview {
     pub proposal_id: String,
     pub criteria_added: Vec<String>,
@@ -192,7 +301,7 @@ pub struct ImpactPreview {
     pub interviews_bound_to_earlier_rubric: usize,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, utoipa::ToSchema)]
 pub enum RefusalCode {
     /// Added after the hires being explained. Cannot be reported as predicted.
     #[serde(rename = "R-AFTER-HIRE", alias = "RAfterHire")]
@@ -241,7 +350,7 @@ impl RefusalCode {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct ClaimLine {
     pub criterion_id: String,
     pub text: String,
@@ -253,16 +362,17 @@ pub struct ClaimLine {
     pub reason: String,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct Report {
     pub role_id: String,
     pub standard_id: String,
     pub lines: Vec<ClaimLine>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct Comparison {
     pub path: String,
     pub report: Report,
     pub stale_assessments: usize,
+    pub omitted_events: Vec<String>,
 }

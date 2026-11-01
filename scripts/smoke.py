@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """End-to-end synthetic API, MCP, replay and bundle verification smoke test."""
+import http.cookiejar
 import json
 import os
 import subprocess
@@ -12,17 +13,24 @@ from pathlib import Path
 BASE = os.environ.get('RECORD_BASE_URL', 'http://127.0.0.1:8080').rstrip('/')
 SESSION = 'smoke-' + uuid.uuid4().hex
 ROOT = Path(__file__).resolve().parent.parent
+OPENER = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(http.cookiejar.CookieJar()))
+
+VERSION = '0:0'
 
 def request(path, method='GET', body=None, headers=None):
+    global VERSION
     data = None if body is None else json.dumps(body).encode()
-    request_headers = {'x-demo-session': SESSION, **(headers or {})}
+    request_headers = {'Idempotency-Key': uuid.uuid4().hex, 'If-Match': VERSION, **(headers or {})}
     if data is not None:
         request_headers['content-type'] = 'application/json'
     req = urllib.request.Request(BASE + path, data=data, method=method, headers=request_headers)
     try:
-        with urllib.request.urlopen(req, timeout=15) as response:
+        with OPENER.open(req, timeout=15) as response:
             raw = response.read()
-            return response.status, json.loads(raw) if raw else None
+            result = json.loads(raw) if raw else None
+            if isinstance(result, dict) and 'version' in result:
+                VERSION = result['version']
+            return response.status, result
     except urllib.error.HTTPError as error:
         return error.code, None
 
@@ -76,8 +84,8 @@ def main():
     _, tools = request('/mcp', 'POST', {'jsonrpc':'2.0','id':1,'method':'tools/list','params':{}}, headers)
     names = {tool['name'] for tool in tools['result']['tools']}
     expect('explain_refusal' in names and not any('approve' in name for name in names), 'read-only MCP tools')
-    _, answer = request('/mcp', 'POST', {'jsonrpc':'2.0','id':2,'method':'tools/call','params':{'name':'explain_refusal','arguments':{'code':'R-AFTER-HIRE','session_id':SESSION}}}, headers)
-    expect('R-AFTER-HIRE' in answer['result']['content'][0]['text'], 'MCP sees the same scenario')
+    _, answer = request('/mcp', 'POST', {'jsonrpc':'2.0','id':2,'method':'tools/call','params':{'name':'explain_refusal','arguments':{'code':'R-AFTER-HIRE'}}}, headers)
+    expect('R-AFTER-HIRE' in answer['result']['content'][0]['text'], 'MCP explains the shared sample')
     _, simulation = request('/v1/simulate?seed=42&rounds=100')
     expect(simulation['rounds'] == 100 and not simulation['failures'], 'deterministic simulation')
     print('PASS: decision paths, replay, acknowledgements, signed bundles, MCP and simulation')

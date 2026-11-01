@@ -11,3 +11,7 @@ blake3.workspace = true
 ed25519-dalek.workspace = true
 hex.workspace = true
 thiserror.workspace = true
+utoipa = "5"
+
+[dev-dependencies]
+proptest = "1"

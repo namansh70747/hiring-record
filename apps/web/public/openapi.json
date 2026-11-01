@@ -1,378 +1,1603 @@
 {
-  "openapi": "3.1.0",
-  "info": {
-    "title": "Hiring Record Synthetic Demo API",
-    "version": "0.2.0",
-    "description": "Local demo API. Synthetic data only; not a production multi-tenant service. MCP tools are read-only."
-  },
-  "servers": [
-    {
-      "url": "/"
+  "components": {
+    "schemas": {
+      "Assessment": {
+        "properties": {
+          "citation": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "criterion": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "met": {
+            "type": "boolean"
+          },
+          "person": {
+            "type": "string"
+          },
+          "version": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "person",
+          "version",
+          "criterion",
+          "met"
+        ],
+        "type": "object"
+      },
+      "Bundle": {
+        "properties": {
+          "algorithm": {
+            "type": "string"
+          },
+          "format": {
+            "type": "string"
+          },
+          "payload": {
+            "type": "string"
+          },
+          "public_key": {
+            "type": "string"
+          },
+          "signature": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "format",
+          "algorithm",
+          "public_key",
+          "payload",
+          "signature"
+        ],
+        "type": "object"
+      },
+      "ClaimLine": {
+        "properties": {
+          "criterion_id": {
+            "type": "string"
+          },
+          "eligible": {
+            "type": "boolean"
+          },
+          "hires_met": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "hires_total": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "naive": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "refusal": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/RefusalCode"
+              }
+            ]
+          },
+          "text": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "criterion_id",
+          "text",
+          "naive",
+          "hires_met",
+          "hires_total",
+          "eligible",
+          "reason"
+        ],
+        "type": "object"
+      },
+      "Command": {
+        "oneOf": [
+          {
+            "properties": {
+              "role_id": {
+                "type": "string"
+              },
+              "standard": {
+                "$ref": "#/components/schemas/StandardVersion"
+              },
+              "type": {
+                "enum": [
+                  "open_role"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "role_id",
+              "standard",
+              "type"
+            ],
+            "type": "object"
+          },
+          {
+            "properties": {
+              "person": {
+                "$ref": "#/components/schemas/Person"
+              },
+              "type": {
+                "enum": [
+                  "add_person"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "person",
+              "type"
+            ],
+            "type": "object"
+          },
+          {
+            "properties": {
+              "proposal": {
+                "$ref": "#/components/schemas/Proposal"
+              },
+              "type": {
+                "enum": [
+                  "propose"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "proposal",
+              "type"
+            ],
+            "type": "object"
+          },
+          {
+            "properties": {
+              "source": {
+                "$ref": "#/components/schemas/SourceMoment"
+              },
+              "type": {
+                "enum": [
+                  "record_source"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "source",
+              "type"
+            ],
+            "type": "object"
+          },
+          {
+            "properties": {
+              "assessment": {
+                "$ref": "#/components/schemas/Assessment"
+              },
+              "type": {
+                "enum": [
+                  "assess"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "assessment",
+              "type"
+            ],
+            "type": "object"
+          },
+          {
+            "properties": {
+              "fact": {
+                "$ref": "#/components/schemas/SourcedFact"
+              },
+              "type": {
+                "enum": [
+                  "record_fact"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "fact",
+              "type"
+            ],
+            "type": "object"
+          },
+          {
+            "properties": {
+              "decision": {
+                "$ref": "#/components/schemas/Decision"
+              },
+              "type": {
+                "enum": [
+                  "record_decision"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "decision",
+              "type"
+            ],
+            "type": "object"
+          },
+          {
+            "properties": {
+              "decision_override": {
+                "$ref": "#/components/schemas/DecisionOverride"
+              },
+              "type": {
+                "enum": [
+                  "override_decision"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "decision_override",
+              "type"
+            ],
+            "type": "object"
+          },
+          {
+            "properties": {
+              "binding": {
+                "$ref": "#/components/schemas/InterviewBinding"
+              },
+              "type": {
+                "enum": [
+                  "bind_interview"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "binding",
+              "type"
+            ],
+            "type": "object"
+          },
+          {
+            "properties": {
+              "quote": {
+                "$ref": "#/components/schemas/Quote"
+              },
+              "type": {
+                "enum": [
+                  "offer_quote"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "quote",
+              "type"
+            ],
+            "type": "object"
+          },
+          {
+            "properties": {
+              "quote_id": {
+                "type": "string"
+              },
+              "type": {
+                "enum": [
+                  "accept_quote"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "quote_id",
+              "type"
+            ],
+            "type": "object"
+          },
+          {
+            "properties": {
+              "quote_id": {
+                "type": "string"
+              },
+              "type": {
+                "enum": [
+                  "decline_quote"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "quote_id",
+              "type"
+            ],
+            "type": "object"
+          },
+          {
+            "properties": {
+              "proposal_id": {
+                "type": "string"
+              },
+              "type": {
+                "enum": [
+                  "dismiss"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "proposal_id",
+              "type"
+            ],
+            "type": "object"
+          },
+          {
+            "properties": {
+              "new_version_id": {
+                "type": "string"
+              },
+              "proposal_id": {
+                "type": "string"
+              },
+              "type": {
+                "enum": [
+                  "approve"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "proposal_id",
+              "new_version_id",
+              "type"
+            ],
+            "type": "object"
+          },
+          {
+            "properties": {
+              "receipt_id": {
+                "type": "string"
+              },
+              "type": {
+                "enum": [
+                  "acknowledge"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "receipt_id",
+              "type"
+            ],
+            "type": "object"
+          },
+          {
+            "properties": {
+              "type": {
+                "enum": [
+                  "confirm_hold"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "type"
+            ],
+            "type": "object"
+          },
+          {
+            "properties": {
+              "type": {
+                "enum": [
+                  "remove_support"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "type"
+            ],
+            "type": "object"
+          }
+        ]
+      },
+      "Comparison": {
+        "properties": {
+          "omitted_events": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "path": {
+            "type": "string"
+          },
+          "report": {
+            "$ref": "#/components/schemas/Report"
+          },
+          "stale_assessments": {
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "path",
+          "report",
+          "stale_assessments",
+          "omitted_events"
+        ],
+        "type": "object"
+      },
+      "CreateRole": {
+        "properties": {
+          "role_id": {
+            "type": "string"
+          },
+          "standard": {
+            "$ref": "#/components/schemas/StandardVersion"
+          }
+        },
+        "required": [
+          "role_id",
+          "standard"
+        ],
+        "type": "object"
+      },
+      "Criterion": {
+        "properties": {
+          "added_at": {
+            "type": "string"
+          },
+          "added_by": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "text": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "text",
+          "added_at",
+          "added_by"
+        ],
+        "type": "object"
+      },
+      "Decision": {
+        "properties": {
+          "at": {
+            "type": "string"
+          },
+          "outcome": {
+            "$ref": "#/components/schemas/Outcome"
+          },
+          "person": {
+            "type": "string"
+          },
+          "version": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "person",
+          "outcome",
+          "at",
+          "version"
+        ],
+        "type": "object"
+      },
+      "DecisionOverride": {
+        "properties": {
+          "at": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "outcome": {
+            "$ref": "#/components/schemas/Outcome"
+          },
+          "person": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "person",
+          "outcome",
+          "reason",
+          "at"
+        ],
+        "type": "object"
+      },
+      "Event": {
+        "properties": {
+          "hash": {
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/EventKind"
+          },
+          "payload": {
+            "type": "string"
+          },
+          "prev_hash": {
+            "type": "string"
+          },
+          "seq": {
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "seq",
+          "kind",
+          "payload",
+          "prev_hash",
+          "hash"
+        ],
+        "type": "object"
+      },
+      "EventKind": {
+        "enum": [
+          "DomainCommandV2",
+          "ProposalDismissed",
+          "StandardApproved",
+          "ReceiptAcknowledged",
+          "HoldConfirmed",
+          "SupportRemoved"
+        ],
+        "type": "string"
+      },
+      "Evidence": {
+        "properties": {
+          "criterion": {
+            "type": "string"
+          },
+          "met": {
+            "type": "boolean"
+          },
+          "person": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "person",
+          "criterion",
+          "met"
+        ],
+        "type": "object"
+      },
+      "ImpactPreview": {
+        "properties": {
+          "assessments_that_would_become_stale": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "criteria_added": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "interviews_bound_to_earlier_rubric": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "proposal_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "proposal_id",
+          "criteria_added",
+          "assessments_that_would_become_stale",
+          "interviews_bound_to_earlier_rubric"
+        ],
+        "type": "object"
+      },
+      "InterviewBinding": {
+        "properties": {
+          "person": {
+            "type": "string"
+          },
+          "rubric_version": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "person",
+          "rubric_version",
+          "status"
+        ],
+        "type": "object"
+      },
+      "Outcome": {
+        "enum": [
+          "hire",
+          "reject"
+        ],
+        "type": "string"
+      },
+      "Person": {
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "place": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "place"
+        ],
+        "type": "object"
+      },
+      "PersonView": {
+        "properties": {
+          "assessment": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/Assessment"
+              }
+            ]
+          },
+          "decision": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/Decision"
+              }
+            ]
+          },
+          "evidence": {
+            "items": {
+              "$ref": "#/components/schemas/Evidence"
+            },
+            "type": "array"
+          },
+          "id": {
+            "type": "string"
+          },
+          "incomplete": {
+            "type": "boolean"
+          },
+          "interview": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/InterviewBinding"
+              }
+            ]
+          },
+          "name": {
+            "type": "string"
+          },
+          "place": {
+            "type": "string"
+          },
+          "source": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/SourceMoment"
+              }
+            ]
+          },
+          "stale": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "place",
+          "stale",
+          "incomplete",
+          "evidence"
+        ],
+        "type": "object"
+      },
+      "Proposal": {
+        "properties": {
+          "add": {
+            "items": {
+              "$ref": "#/components/schemas/Criterion"
+            },
+            "type": "array"
+          },
+          "base": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/ProposalStatus"
+          }
+        },
+        "required": [
+          "id",
+          "base",
+          "add"
+        ],
+        "type": "object"
+      },
+      "ProposalStatus": {
+        "enum": [
+          "open",
+          "dismissed",
+          "approved"
+        ],
+        "type": "string"
+      },
+      "Quote": {
+        "properties": {
+          "amount_minor": {
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "currency": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "person": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "person",
+          "amount_minor",
+          "currency",
+          "status"
+        ],
+        "type": "object"
+      },
+      "Receipt": {
+        "properties": {
+          "acknowledged": {
+            "type": "boolean"
+          },
+          "id": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "label",
+          "acknowledged"
+        ],
+        "type": "object"
+      },
+      "RefusalCode": {
+        "enum": [
+          "R-AFTER-HIRE",
+          "R-REJECTS-MET",
+          "R-SUPPORT-GONE",
+          "R-STALE",
+          "R-RUBRIC-OLD",
+          "R-UNCITED",
+          "R-NO-ACK",
+          "R-NO-OP",
+          "R-DECLINED",
+          "R-UNCONFIRMED",
+          "R-INSUFFICIENT-DATA",
+          "R-INCOMPLETE-EVIDENCE"
+        ],
+        "type": "string"
+      },
+      "Report": {
+        "properties": {
+          "lines": {
+            "items": {
+              "$ref": "#/components/schemas/ClaimLine"
+            },
+            "type": "array"
+          },
+          "role_id": {
+            "type": "string"
+          },
+          "standard_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "role_id",
+          "standard_id",
+          "lines"
+        ],
+        "type": "object"
+      },
+      "RoleList": {
+        "properties": {
+          "role_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "role_ids"
+        ],
+        "type": "object"
+      },
+      "SimulationResult": {
+        "properties": {
+          "checks": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "failures": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "rounds": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "seed": {
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "trace": {
+            "items": {
+              "$ref": "#/components/schemas/SimulationStep"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "seed",
+          "rounds",
+          "checks",
+          "failures",
+          "trace"
+        ],
+        "type": "object"
+      },
+      "SimulationStep": {
+        "properties": {
+          "acknowledged": {
+            "type": "boolean"
+          },
+          "event_count": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "fault": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "refusals": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "root": {
+            "type": "string"
+          },
+          "round": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "stale": {
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "round",
+          "path",
+          "stale",
+          "acknowledged",
+          "event_count",
+          "root",
+          "refusals",
+          "fault"
+        ],
+        "type": "object"
+      },
+      "SourceMoment": {
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "person": {
+            "type": "string"
+          },
+          "quote": {
+            "type": "string"
+          },
+          "timestamp": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "person",
+          "kind",
+          "timestamp",
+          "quote"
+        ],
+        "type": "object"
+      },
+      "SourcedFact": {
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "key": {
+            "type": "string"
+          },
+          "person": {
+            "type": "string"
+          },
+          "source_id": {
+            "type": "string"
+          },
+          "value": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "person",
+          "key",
+          "value",
+          "source_id"
+        ],
+        "type": "object"
+      },
+      "StandardVersion": {
+        "properties": {
+          "criteria": {
+            "items": {
+              "$ref": "#/components/schemas/Criterion"
+            },
+            "type": "array"
+          },
+          "effective_at": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "effective_at",
+          "criteria"
+        ],
+        "type": "object"
+      },
+      "State": {
+        "properties": {
+          "active": {
+            "$ref": "#/components/schemas/StandardVersion"
+          },
+          "assessments": {
+            "items": {
+              "$ref": "#/components/schemas/Assessment"
+            },
+            "type": "array"
+          },
+          "decisions": {
+            "items": {
+              "$ref": "#/components/schemas/Decision"
+            },
+            "type": "array"
+          },
+          "events": {
+            "items": {
+              "$ref": "#/components/schemas/Event"
+            },
+            "type": "array"
+          },
+          "evidence": {
+            "items": {
+              "$ref": "#/components/schemas/Evidence"
+            },
+            "type": "array"
+          },
+          "facts": {
+            "items": {
+              "$ref": "#/components/schemas/SourcedFact"
+            },
+            "type": "array"
+          },
+          "hold_confirmed": {
+            "type": "boolean"
+          },
+          "interviews": {
+            "items": {
+              "$ref": "#/components/schemas/InterviewBinding"
+            },
+            "type": "array"
+          },
+          "link_operations": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "overrides": {
+            "items": {
+              "$ref": "#/components/schemas/DecisionOverride"
+            },
+            "type": "array"
+          },
+          "people": {
+            "items": {
+              "$ref": "#/components/schemas/Person"
+            },
+            "type": "array"
+          },
+          "proposals": {
+            "items": {
+              "$ref": "#/components/schemas/Proposal"
+            },
+            "type": "array"
+          },
+          "quote_declined": {
+            "type": "boolean"
+          },
+          "quotes": {
+            "items": {
+              "$ref": "#/components/schemas/Quote"
+            },
+            "type": "array"
+          },
+          "receipts": {
+            "items": {
+              "$ref": "#/components/schemas/Receipt"
+            },
+            "type": "array"
+          },
+          "role_id": {
+            "type": "string"
+          },
+          "sources": {
+            "items": {
+              "$ref": "#/components/schemas/SourceMoment"
+            },
+            "type": "array"
+          },
+          "support_present": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "role_id",
+          "active",
+          "people",
+          "decisions",
+          "evidence",
+          "assessments",
+          "sources",
+          "interviews",
+          "proposals",
+          "receipts",
+          "hold_confirmed",
+          "support_present",
+          "quote_declined",
+          "link_operations",
+          "events"
+        ],
+        "type": "object"
+      },
+      "ViewDocument": {
+        "properties": {
+          "at": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "banner": {
+            "type": "string"
+          },
+          "criteria": {
+            "items": {
+              "$ref": "#/components/schemas/Criterion"
+            },
+            "type": "array"
+          },
+          "engine_state": {
+            "$ref": "#/components/schemas/State"
+          },
+          "events": {
+            "items": {
+              "$ref": "#/components/schemas/Event"
+            },
+            "type": "array"
+          },
+          "facts": {
+            "items": {
+              "$ref": "#/components/schemas/SourcedFact"
+            },
+            "type": "array"
+          },
+          "hold_confirmed": {
+            "type": "boolean"
+          },
+          "interviews": {
+            "items": {
+              "$ref": "#/components/schemas/InterviewBinding"
+            },
+            "type": "array"
+          },
+          "live_total": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "overrides": {
+            "items": {
+              "$ref": "#/components/schemas/DecisionOverride"
+            },
+            "type": "array"
+          },
+          "people": {
+            "items": {
+              "$ref": "#/components/schemas/PersonView"
+            },
+            "type": "array"
+          },
+          "preview": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/ImpactPreview"
+              }
+            ]
+          },
+          "proposal": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/Proposal"
+              }
+            ]
+          },
+          "proposal_status": {
+            "type": "string"
+          },
+          "quotes": {
+            "items": {
+              "$ref": "#/components/schemas/Quote"
+            },
+            "type": "array"
+          },
+          "receipts": {
+            "items": {
+              "$ref": "#/components/schemas/Receipt"
+            },
+            "type": "array"
+          },
+          "report": {
+            "$ref": "#/components/schemas/Report"
+          },
+          "standard_effective_at": {
+            "type": "string"
+          },
+          "standard_id": {
+            "type": "string"
+          },
+          "support_present": {
+            "type": "boolean"
+          },
+          "version": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "banner",
+          "standard_id",
+          "standard_effective_at",
+          "proposal_status",
+          "criteria",
+          "people",
+          "report",
+          "interviews",
+          "receipts",
+          "hold_confirmed",
+          "support_present",
+          "events",
+          "engine_state",
+          "quotes",
+          "facts",
+          "overrides",
+          "at",
+          "live_total",
+          "version"
+        ],
+        "type": "object"
+      }
     }
-  ],
+  },
+  "info": {
+    "description": "Synthetic data only. Browser scenarios use signed HttpOnly cookies. Mutations require Idempotency-Key and If-Match (generation:sequence). MCP reads a separate approved example; it cannot select browser scenarios.",
+    "license": {
+      "identifier": "MIT",
+      "name": "MIT"
+    },
+    "title": "Hiring Record synthetic API",
+    "version": "1.0.0"
+  },
+  "openapi": "3.1.0",
   "paths": {
-    "/health": {
-      "get": {
-        "summary": "Liveness check",
-        "parameters": [],
+    "/mcp": {
+      "post": {
         "responses": {
           "200": {
-            "description": "Successful response"
-          },
-          "400": {
-            "description": "Invalid input"
-          },
-          "503": {
-            "description": "Storage unavailable"
+            "description": "MCP JSON-RPC result"
           }
-        }
+        },
+        "summary": "Read-only MCP Streamable HTTP"
       }
     },
     "/ready": {
       "get": {
-        "summary": "Storage readiness check",
-        "parameters": [],
+        "operationId": "connection_check",
         "responses": {
           "200": {
-            "description": "Successful response"
-          },
-          "400": {
-            "description": "Invalid input"
-          },
-          "503": {
-            "description": "Storage unavailable"
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": ""
           }
-        }
-      }
-    },
-    "/v1/roles/sept/view": {
-      "get": {
-        "summary": "Read the synthetic scenario or an event-index snapshot",
-        "parameters": [
-          {
-            "name": "x-demo-session",
-            "in": "header",
-            "required": false,
-            "description": "Synthetic scenario identifier, up to 80 ASCII letters, digits or hyphens. Omit for the default local scenario.",
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "at",
-            "in": "query",
-            "required": false,
-            "description": "Historical event index.",
-            "schema": {
-              "type": "integer",
-              "minimum": 0
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful response"
-          },
-          "400": {
-            "description": "Invalid input"
-          },
-          "503": {
-            "description": "Storage unavailable"
-          }
-        }
-      }
-    },
-    "/v1/roles/sept/report": {
-      "get": {
-        "summary": "Evaluate the report",
-        "parameters": [
-          {
-            "name": "x-demo-session",
-            "in": "header",
-            "required": false,
-            "description": "Synthetic scenario identifier, up to 80 ASCII letters, digits or hyphens. Omit for the default local scenario.",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful response"
-          },
-          "400": {
-            "description": "Invalid input"
-          },
-          "503": {
-            "description": "Storage unavailable"
-          }
-        }
-      }
-    },
-    "/v1/roles/sept/counterfactual": {
-      "get": {
-        "summary": "Evaluate the opposite proposal path",
-        "parameters": [
-          {
-            "name": "x-demo-session",
-            "in": "header",
-            "required": false,
-            "description": "Synthetic scenario identifier, up to 80 ASCII letters, digits or hyphens. Omit for the default local scenario.",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful response"
-          },
-          "400": {
-            "description": "Invalid input"
-          },
-          "503": {
-            "description": "Storage unavailable"
-          }
-        }
-      }
-    },
-    "/v1/roles/sept/bundle": {
-      "get": {
-        "summary": "Sign and export the current synthetic report bundle",
-        "parameters": [
-          {
-            "name": "x-demo-session",
-            "in": "header",
-            "required": false,
-            "description": "Synthetic scenario identifier, up to 80 ASCII letters, digits or hyphens. Omit for the default local scenario.",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful response"
-          },
-          "400": {
-            "description": "Invalid input"
-          },
-          "503": {
-            "description": "Storage unavailable"
-          }
-        }
-      }
-    },
-    "/v1/signing-key": {
-      "get": {
-        "summary": "Read the current ephemeral demo public key",
-        "parameters": [],
-        "responses": {
-          "200": {
-            "description": "Successful response"
-          },
-          "400": {
-            "description": "Invalid input"
-          },
-          "503": {
-            "description": "Storage unavailable"
-          }
-        }
-      }
-    },
-    "/v1/simulate": {
-      "get": {
-        "summary": "Run reproducible engine simulation",
-        "parameters": [
-          {
-            "name": "seed",
-            "in": "query",
-            "schema": {
-              "type": "integer",
-              "minimum": 0
-            }
-          },
-          {
-            "name": "rounds",
-            "in": "query",
-            "schema": {
-              "type": "integer",
-              "minimum": 1,
-              "maximum": 10000
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful response"
-          },
-          "400": {
-            "description": "Invalid input"
-          },
-          "503": {
-            "description": "Storage unavailable"
-          }
-        }
-      }
-    },
-    "/api/connection_check": {
-      "get": {
-        "summary": "Read demo readiness",
-        "parameters": [],
-        "responses": {
-          "200": {
-            "description": "Successful response"
-          },
-          "400": {
-            "description": "Invalid input"
-          },
-          "503": {
-            "description": "Storage unavailable"
-          }
-        }
-      }
-    },
-    "/v1/roles/sept/proposals/B/dismiss": {
-      "post": {
-        "summary": "Dismiss proposal B",
-        "parameters": [
-          {
-            "name": "x-demo-session",
-            "in": "header",
-            "required": false,
-            "description": "Synthetic scenario identifier, up to 80 ASCII letters, digits or hyphens. Omit for the default local scenario.",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Updated synthetic scenario"
-          },
-          "400": {
-            "description": "Invalid session"
-          },
-          "403": {
-            "description": "Cross-origin mutation rejected"
-          },
-          "409": {
-            "description": "Command conflicts with current state"
-          },
-          "503": {
-            "description": "Storage unavailable"
-          }
-        }
-      }
-    },
-    "/v1/roles/sept/proposals/B/approve": {
-      "post": {
-        "summary": "Approve proposal B",
-        "parameters": [
-          {
-            "name": "x-demo-session",
-            "in": "header",
-            "required": false,
-            "description": "Synthetic scenario identifier, up to 80 ASCII letters, digits or hyphens. Omit for the default local scenario.",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Updated synthetic scenario"
-          },
-          "400": {
-            "description": "Invalid session"
-          },
-          "403": {
-            "description": "Cross-origin mutation rejected"
-          },
-          "409": {
-            "description": "Command conflicts with current state"
-          },
-          "503": {
-            "description": "Storage unavailable"
-          }
-        }
-      }
-    },
-    "/v1/roles/sept/reset": {
-      "post": {
-        "summary": "Reset the synthetic scenario",
-        "parameters": [
-          {
-            "name": "x-demo-session",
-            "in": "header",
-            "required": false,
-            "description": "Synthetic scenario identifier, up to 80 ASCII letters, digits or hyphens. Omit for the default local scenario.",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Updated synthetic scenario"
-          },
-          "400": {
-            "description": "Invalid session"
-          },
-          "403": {
-            "description": "Cross-origin mutation rejected"
-          },
-          "409": {
-            "description": "Command conflicts with current state"
-          },
-          "503": {
-            "description": "Storage unavailable"
-          }
-        }
-      }
-    },
-    "/v1/receipts/nw-B2/ack": {
-      "post": {
-        "summary": "Simulate a receipt acknowledgement",
-        "parameters": [
-          {
-            "name": "x-demo-session",
-            "in": "header",
-            "required": false,
-            "description": "Synthetic scenario identifier, up to 80 ASCII letters, digits or hyphens. Omit for the default local scenario.",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Updated synthetic scenario"
-          },
-          "400": {
-            "description": "Invalid session"
-          },
-          "403": {
-            "description": "Cross-origin mutation rejected"
-          },
-          "409": {
-            "description": "Command conflicts with current state"
-          },
-          "503": {
-            "description": "Storage unavailable"
-          }
-        }
+        },
+        "tags": [
+          "crate"
+        ]
       }
     },
     "/v1/holds/debrief/confirm": {
       "post": {
-        "summary": "Confirm the synthetic hold",
+        "operationId": "confirm_hold",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ViewDocument"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "tags": [
+          "crate"
+        ]
+      }
+    },
+    "/v1/receipts/nw-B2/ack": {
+      "post": {
+        "operationId": "ack",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ViewDocument"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "tags": [
+          "crate"
+        ]
+      }
+    },
+    "/v1/roles": {
+      "get": {
+        "operationId": "list_roles",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RoleList"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "tags": [
+          "crate"
+        ]
+      },
+      "post": {
+        "operationId": "create_role",
         "parameters": [
           {
-            "name": "x-demo-session",
             "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "If-Match",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateRole"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ViewDocument"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "description": "Role or version conflict"
+          }
+        },
+        "tags": [
+          "crate"
+        ]
+      }
+    },
+    "/v1/roles/sept/bundle": {
+      "get": {
+        "operationId": "bundle",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Bundle"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "tags": [
+          "crate"
+        ]
+      }
+    },
+    "/v1/roles/sept/counterfactual": {
+      "get": {
+        "operationId": "hypothetical",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Comparison"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "tags": [
+          "crate"
+        ]
+      }
+    },
+    "/v1/roles/sept/proposals/B/approve": {
+      "post": {
+        "operationId": "approve",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ViewDocument"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "tags": [
+          "crate"
+        ]
+      }
+    },
+    "/v1/roles/sept/proposals/B/dismiss": {
+      "post": {
+        "operationId": "dismiss",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ViewDocument"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "tags": [
+          "crate"
+        ]
+      }
+    },
+    "/v1/roles/sept/report": {
+      "get": {
+        "operationId": "report",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Report"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "tags": [
+          "crate"
+        ]
+      }
+    },
+    "/v1/roles/sept/reset": {
+      "post": {
+        "operationId": "reset",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ViewDocument"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "tags": [
+          "crate"
+        ]
+      }
+    },
+    "/v1/roles/sept/stream": {
+      "get": {
+        "operationId": "stream",
+        "responses": {
+          "200": {
+            "description": "SSE snapshot events with generation:sequence IDs; Last-Event-ID supports reconnect"
+          }
+        },
+        "tags": [
+          "crate"
+        ]
+      }
+    },
+    "/v1/roles/sept/view": {
+      "get": {
+        "operationId": "view",
+        "parameters": [
+          {
+            "description": "Historical event index",
+            "in": "query",
+            "name": "at",
             "required": false,
-            "description": "Synthetic scenario identifier, up to 80 ASCII letters, digits or hyphens. Omit for the default local scenario.",
+            "schema": {
+              "minimum": 0,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ViewDocument"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "tags": [
+          "crate"
+        ]
+      }
+    },
+    "/v1/roles/{role_id}/bundle": {
+      "get": {
+        "operationId": "role_bundle",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "role_id",
+            "required": true,
             "schema": {
               "type": "string"
             }
@@ -380,64 +1605,267 @@
         ],
         "responses": {
           "200": {
-            "description": "Updated synthetic scenario"
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Bundle"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "tags": [
+          "crate"
+        ]
+      }
+    },
+    "/v1/roles/{role_id}/commands": {
+      "post": {
+        "operationId": "command",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "role_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
           },
-          "400": {
-            "description": "Invalid session"
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
           },
-          "403": {
-            "description": "Cross-origin mutation rejected"
+          {
+            "in": "header",
+            "name": "If-Match",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Command"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ViewDocument"
+                }
+              }
+            },
+            "description": ""
           },
           "409": {
-            "description": "Command conflicts with current state"
-          },
-          "503": {
-            "description": "Storage unavailable"
+            "description": "Version conflict"
           }
-        }
+        },
+        "tags": [
+          "crate"
+        ]
+      }
+    },
+    "/v1/roles/{role_id}/report": {
+      "get": {
+        "operationId": "role_report",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "role_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Report"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "tags": [
+          "crate"
+        ]
+      }
+    },
+    "/v1/roles/{role_id}/view": {
+      "get": {
+        "operationId": "role_view",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "role_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "at",
+            "required": false,
+            "schema": {
+              "minimum": 0,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ViewDocument"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "description": "Role not found"
+          }
+        },
+        "tags": [
+          "crate"
+        ]
+      }
+    },
+    "/v1/session/new": {
+      "post": {
+        "operationId": "new_session",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ViewDocument"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "tags": [
+          "crate"
+        ]
+      }
+    },
+    "/v1/signing-key": {
+      "get": {
+        "operationId": "signing_key",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": ""
+          }
+        },
+        "tags": [
+          "crate"
+        ]
+      }
+    },
+    "/v1/simulate": {
+      "get": {
+        "operationId": "simulate",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "seed",
+            "required": false,
+            "schema": {
+              "format": "int64",
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "rounds",
+            "required": false,
+            "schema": {
+              "minimum": 0,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SimulationResult"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "tags": [
+          "crate"
+        ]
       }
     },
     "/v1/support/mina/remove": {
       "post": {
-        "summary": "Remove synthetic claim support",
-        "parameters": [
-          {
-            "name": "x-demo-session",
-            "in": "header",
-            "required": false,
-            "description": "Synthetic scenario identifier, up to 80 ASCII letters, digits or hyphens. Omit for the default local scenario.",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
+        "operationId": "remove_support",
         "responses": {
           "200": {
-            "description": "Updated synthetic scenario"
-          },
-          "400": {
-            "description": "Invalid session"
-          },
-          "403": {
-            "description": "Cross-origin mutation rejected"
-          },
-          "409": {
-            "description": "Command conflicts with current state"
-          },
-          "503": {
-            "description": "Storage unavailable"
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ViewDocument"
+                }
+              }
+            },
+            "description": ""
           }
-        }
+        },
+        "tags": [
+          "crate"
+        ]
       }
     },
-    "/mcp": {
-      "post": {
-        "summary": "MCP Streamable HTTP endpoint; read-only synthetic tools",
+    "/v1/workflows": {
+      "get": {
+        "operationId": "workflow_status",
         "responses": {
           "200": {
-            "description": "MCP JSON-RPC response"
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": ""
           }
-        }
+        },
+        "tags": [
+          "crate"
+        ]
       }
     }
   }

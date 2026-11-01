@@ -1,0 +1,13 @@
+.git
+.local
+.env
+.env.*
+!.env.example
+**/node_modules
+**/.next
+**/out
+**/test-results
+**/playwright-report
+target
+_apalache-out
+.DS_Store

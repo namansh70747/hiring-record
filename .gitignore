@@ -10,3 +10,10 @@ apps/web/out
 *.tsbuildinfo
 
 apps/web/public/engine
+
+.local/
+
+_apalache-out/
+
+apps/web/test-results/
+apps/web/playwright-report/

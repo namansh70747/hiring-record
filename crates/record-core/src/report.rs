@@ -43,6 +43,7 @@ fn claim_line(
     let added_after_hires = hires
         .iter()
         .any(|d| criterion.added_at.as_str() > d.at.as_str());
+    let same_day_as_hire = hires.iter().any(|d| criterion.added_at == d.at);
     let missing_evidence = hires.iter().chain(rejects.iter()).any(|d| {
         !state
             .evidence
@@ -60,6 +61,12 @@ fn claim_line(
                 "{} was added {}, after at least one of those hires. The count stays. It cannot be reported as predicted.",
                 criterion.text, criterion.added_at
             ),
+        )
+    } else if same_day_as_hire {
+        (
+            false,
+            Some(RefusalCode::RInsufficientData),
+            "The criterion and a hire share a date; without times their order cannot be established.".into(),
         )
     } else if hires.is_empty() || rejects.is_empty() {
         (
@@ -137,11 +144,24 @@ fn operation_lines(state: &State) -> Vec<ClaimLine> {
         )
     };
     let stale = state
-        .assessments
-        .iter()
+        .latest_assessments()
+        .into_iter()
         .filter(|a| state.is_stale(a))
         .count();
-    let (stale_ok, stale_code, stale_reason) = if stale == 0 {
+    let missing_current = state.people.iter().any(|person| {
+        state.active.criteria.iter().any(|criterion| {
+            !state.assessments.iter().any(|a| {
+                a.person == person.id && a.criterion == criterion.id && a.version == state.active.id
+            })
+        })
+    });
+    let (stale_ok, stale_code, stale_reason) = if stale == 0 && missing_current {
+        (
+            false,
+            Some(RefusalCode::RIncompleteEvidence),
+            "At least one person has no assessment for a current criterion.".into(),
+        )
+    } else if stale == 0 {
         (true, None, "Assessments match the active standard.".into())
     } else {
         (
@@ -246,7 +266,34 @@ fn operation_lines(state: &State) -> Vec<ClaimLine> {
             },
         ),
     ];
-    if state.quote_declined {
+    for quote in &state.quotes {
+        let (eligible, code, reason) = match quote.status.as_str() {
+            "accepted" => (
+                true,
+                None,
+                "The quote was accepted; its delivery receipt is checked separately.",
+            ),
+            "declined" => (
+                false,
+                Some(RefusalCode::RDeclined),
+                "The quote was declined, so no delivery was requested for it.",
+            ),
+            _ => (
+                false,
+                Some(RefusalCode::RUnconfirmed),
+                "The quote is still offered and has not been accepted.",
+            ),
+        };
+        lines.push(line(
+            &format!("op-quote-{}", quote.id),
+            "Quote accepted",
+            &quote.status,
+            eligible,
+            code,
+            reason.into(),
+        ));
+    }
+    if state.quote_declined && state.quotes.is_empty() {
         lines.push(line(
             "op-quote",
             "Quote accepted",

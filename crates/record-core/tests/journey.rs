@@ -418,3 +418,328 @@ fn comparing_an_approved_path_replays_dismissal_and_independent_events() {
         "comparison does not mutate the live path"
     );
 }
+
+#[test]
+fn quote_and_fact_commands_preserve_history_and_replay() {
+    let fixture = load_fixture(&record_core::fixture_path()).unwrap();
+    let initial = state_from_fixture(&fixture);
+    let mut state = initial.clone();
+    let original = state.assessments.clone();
+    apply(
+        &mut state,
+        Command::OfferQuote {
+            quote: record_core::Quote {
+                id: "q-priya".into(),
+                person: "priya".into(),
+                amount_minor: 25000,
+                currency: "USD".into(),
+                status: "offered".into(),
+            },
+        },
+    )
+    .unwrap();
+    apply(
+        &mut state,
+        Command::DeclineQuote {
+            quote_id: "q-priya".into(),
+        },
+    )
+    .unwrap();
+    assert!(state.receipts.is_empty());
+    assert!(evaluate_report(&state)
+        .lines
+        .iter()
+        .any(|l| l.refusal == Some(RefusalCode::RDeclined)));
+    assert!(apply(
+        &mut state,
+        Command::AcceptQuote {
+            quote_id: "q-priya".into()
+        }
+    )
+    .is_err());
+    apply(
+        &mut state,
+        Command::RecordFact {
+            fact: record_core::SourcedFact {
+                id: "f1".into(),
+                person: "priya".into(),
+                key: "availability".into(),
+                value: "June".into(),
+                source_id: "src-priya".into(),
+            },
+        },
+    )
+    .unwrap();
+    apply(
+        &mut state,
+        Command::RecordFact {
+            fact: record_core::SourcedFact {
+                id: "f2".into(),
+                person: "priya".into(),
+                key: "availability".into(),
+                value: "July".into(),
+                source_id: "src-priya".into(),
+            },
+        },
+    )
+    .unwrap();
+    assert_eq!(
+        state.facts.len(),
+        2,
+        "conflicting sourced values are not overwritten"
+    );
+    assert_eq!(state.assessments, original);
+    let mut replay = initial;
+    for event in &state.events {
+        record_core::evolve(&mut replay, event.clone());
+    }
+    assert_eq!(state, replay);
+}
+
+#[test]
+fn accepted_quote_creates_pending_receipt_and_rejects_duplicate_resolution() {
+    let fixture = load_fixture(&record_core::fixture_path()).unwrap();
+    let mut state = state_from_fixture(&fixture);
+    apply(
+        &mut state,
+        Command::OfferQuote {
+            quote: record_core::Quote {
+                id: "quote-1".into(),
+                person: "priya".into(),
+                amount_minor: 1000,
+                currency: "INR".into(),
+                status: "offered".into(),
+            },
+        },
+    )
+    .unwrap();
+    apply(
+        &mut state,
+        Command::AcceptQuote {
+            quote_id: "quote-1".into(),
+        },
+    )
+    .unwrap();
+    assert!(!state.receipts[0].acknowledged);
+    assert!(apply(
+        &mut state,
+        Command::AcceptQuote {
+            quote_id: "quote-1".into()
+        }
+    )
+    .is_err());
+    apply(
+        &mut state,
+        Command::Acknowledge {
+            receipt_id: "quote-quote-1".into(),
+        },
+    )
+    .unwrap();
+    assert!(state.receipts[0].acknowledged);
+}
+
+proptest::proptest! {
+    #[test]
+    fn arbitrary_command_interleavings_preserve_replay_and_assessment_history(actions in proptest::collection::vec(0u8..5, 0..60)) {
+        let initial=opened(); let mut state=initial.clone();
+        for action in actions {
+            let before=state.clone();
+            let cmd=match action {
+                0=>Command::Dismiss{proposal_id:"B".into()},
+                1=>Command::Approve{proposal_id:"B".into(),new_version_id:"B2".into()},
+                2=>Command::Acknowledge{receipt_id:"nw-B2".into()},
+                3=>Command::ConfirmHold,
+                _=>Command::RemoveSupport,
+            };
+            if apply(&mut state,cmd).is_err() { proptest::prop_assert_eq!(&state,&before); }
+            proptest::prop_assert_eq!(&state.assessments,&initial.assessments);
+            proptest::prop_assert_eq!(&state.interviews,&initial.interviews);
+            if state.active.id=="B2" {proptest::prop_assert!(state.assessments.iter().all(|a|state.is_stale(a)));}
+            else {proptest::prop_assert!(state.assessments.iter().all(|a|!state.is_stale(a)));}
+            let mut replay=initial.clone();
+            for event in &state.events {record_core::replay_event(&mut replay,event.clone()).unwrap();}
+            proptest::prop_assert_eq!(&replay,&state);
+        }
+    }
+}
+
+#[test]
+fn replay_rejects_hash_valid_but_semantically_tampered_events() {
+    let mut state = opened();
+    let mut event = record_core::decide(&state, Command::ConfirmHold).unwrap();
+    event.payload = "hold=unexpected".into();
+    event.hash = record_core::hash_event(&event);
+    assert!(record_core::replay_event(&mut state, event).is_err());
+    assert!(state.events.is_empty());
+}
+
+#[test]
+fn counterfactual_preserves_independent_quote_history() {
+    let initial = opened();
+    let mut current = initial.clone();
+    apply(
+        &mut current,
+        Command::Approve {
+            proposal_id: "B".into(),
+            new_version_id: "B2".into(),
+        },
+    )
+    .unwrap();
+    apply(
+        &mut current,
+        Command::OfferQuote {
+            quote: record_core::Quote {
+                id: "test-quote".into(),
+                person: "priya".into(),
+                amount_minor: 500,
+                currency: "USD".into(),
+                status: "offered".into(),
+            },
+        },
+    )
+    .unwrap();
+    apply(
+        &mut current,
+        Command::AcceptQuote {
+            quote_id: "test-quote".into(),
+        },
+    )
+    .unwrap();
+    let comparison = record_core::compare_other_path(&initial, &current).unwrap();
+    assert_eq!(comparison.path, "dismissed");
+    assert!(comparison
+        .report
+        .lines
+        .iter()
+        .any(|l| l.criterion_id == "op-quote-test-quote" && l.eligible));
+    assert!(comparison.omitted_events.is_empty());
+    assert_eq!(current.active.id, "B2");
+}
+
+#[test]
+fn same_day_criterion_and_hire_cannot_establish_temporal_order() {
+    let mut state = opened();
+    state.active.criteria[0].added_at = state
+        .decisions
+        .iter()
+        .find(|d| d.outcome == Outcome::Hire)
+        .unwrap()
+        .at
+        .clone();
+    let line = evaluate_report(&state)
+        .lines
+        .into_iter()
+        .find(|l| l.criterion_id == "built_from_zero")
+        .unwrap();
+    assert_eq!(line.refusal, Some(RefusalCode::RInsufficientData));
+}
+
+#[test]
+fn verifier_accepts_a_valid_v1_payload_without_source_references() {
+    use ed25519_dalek::Signer;
+    let state = opened();
+    let key = ed25519_dalek::SigningKey::from_bytes(&[12; 32]);
+    let mut bundle = record_core::create_bundle(&state, &key).unwrap();
+    let mut payload: serde_json::Value = serde_json::from_str(&bundle.payload).unwrap();
+    payload["format"] = "hiring-record-payload/v1".into();
+    payload.as_object_mut().unwrap().remove("source_references");
+    bundle.payload = serde_json::to_string(&payload).unwrap();
+    bundle.signature = hex::encode(key.sign(bundle.payload.as_bytes()).to_bytes());
+    let verification = record_core::verify_bundle(&bundle, Some(&bundle.public_key)).unwrap();
+    assert!(
+        verification.signature_valid && verification.chain_valid && verification.trusted_signer
+    );
+}
+
+#[test]
+fn new_role_preserves_predecision_evidence_after_reassessment() {
+    let mut state = record_core::State::empty();
+    let criterion = record_core::Criterion {
+        id: "build".into(),
+        text: "Built systems".into(),
+        added_at: "2026-01-01".into(),
+        added_by: "alex".into(),
+    };
+    apply(
+        &mut state,
+        Command::OpenRole {
+            role_id: "custom".into(),
+            standard: record_core::StandardVersion {
+                id: "v1".into(),
+                effective_at: "2026-01-01".into(),
+                criteria: vec![criterion],
+            },
+        },
+    )
+    .unwrap();
+    apply(
+        &mut state,
+        Command::AddPerson {
+            person: record_core::Person {
+                id: "sam".into(),
+                name: "Sam".into(),
+                place: "in_review".into(),
+            },
+        },
+    )
+    .unwrap();
+    apply(
+        &mut state,
+        Command::RecordSource {
+            source: record_core::SourceMoment {
+                id: "source".into(),
+                person: "sam".into(),
+                kind: "Synthetic note".into(),
+                timestamp: "00:01:00".into(),
+                quote: "Built a system.".into(),
+            },
+        },
+    )
+    .unwrap();
+    let assessment = record_core::Assessment {
+        id: "a1".into(),
+        person: "sam".into(),
+        version: "v1".into(),
+        criterion: "build".into(),
+        met: true,
+        citation: Some("source".into()),
+    };
+    apply(
+        &mut state,
+        Command::Assess {
+            assessment: assessment.clone(),
+        },
+    )
+    .unwrap();
+    apply(
+        &mut state,
+        Command::RecordDecision {
+            decision: record_core::Decision {
+                person: "sam".into(),
+                outcome: Outcome::Hire,
+                at: "2026-02-01".into(),
+                version: "v1".into(),
+            },
+        },
+    )
+    .unwrap();
+    apply(
+        &mut state,
+        Command::Assess {
+            assessment: record_core::Assessment {
+                id: "a2".into(),
+                met: false,
+                ..assessment
+            },
+        },
+    )
+    .unwrap();
+    assert_eq!(state.assessments.len(), 2);
+    assert_eq!(state.latest_assessments().len(), 1);
+    assert_eq!(evaluate_report(&state).lines[0].naive, "1 of 1 hires");
+    let mut replay = record_core::State::empty();
+    for event in state.events.clone() {
+        record_core::replay_event(&mut replay, event).unwrap();
+    }
+    assert_eq!(replay, state);
+}
