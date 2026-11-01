@@ -22,7 +22,7 @@ Without Docker, run `just memory`; this stores scenarios in memory until the ser
 2. Dismiss the proposal: assessments remain current. Reset and approve it instead: the original assessments are now stale and Priya's interview still uses its original rubric.
 3. The report retains the two “3 of 3” observations while refusing predictive claims with `R-AFTER-HIRE` and `R-REJECTS-MET`.
 4. Inspect a person's synthetic transcript moment, simulate an acknowledgement, confirm the hold, compare the opposite path in browser WebAssembly and scrub the timeline.
-5. Select **Seal & export**, then open **Verify** to check the bundle locally. Compare its public key with a trusted key. The demo key is temporary; a valid signature alone does not establish signer identity or factual accuracy.
+5. Select **View report** for a print-friendly report and use the browser’s print dialog to save a PDF. Select **Seal & export**, then open **Verify** to check the bundle locally. Compare its public key with a trusted key. The demo key is temporary; a valid signature alone does not establish signer identity or factual accuracy.
 6. Open **Simulation lab** to run deterministic engine scenarios. The lab does not simulate distributed infrastructure faults.
 7. Visit `/developers/` for the API and agent reference. Connect a read-only MCP client to `http://127.0.0.1:8080/mcp`. Without a session ID, tools use a reproducible approved example. The workspace displays its session ID for inspecting a particular synthetic browser scenario.
 
@@ -37,7 +37,7 @@ cargo run -p record-cli -- verify /path/to/hiring-record-sealed-bundle.json
 cargo run -p record-cli -- verify /path/to/hiring-record-sealed-bundle.json --trust-key <hex-public-key>
 ```
 
-The bundle signs the exact UTF-8 payload with Ed25519 and includes BLAKE3-chained events. Verification checks the signature, event chain and optionally a separately supplied public key. It does **not** replay the report rules, include source documents, or establish that the underlying evidence is true. This is a JSON bundle, not a PDF signature.
+The print-friendly PDF is a rendering, not a signed PDF; verify the signed JSON bundle separately. The bundle signs the exact UTF-8 payload with Ed25519 and includes BLAKE3-chained events. Verification checks the signature, event chain and optionally a separately supplied public key. It does **not** replay the report rules, include source documents, or establish that the underlying evidence is true. This is a JSON bundle, not a PDF signature.
 
 ## Checks
 

@@ -55,10 +55,20 @@ impl Store {
         sqlx::query("SELECT pg_advisory_xact_lock(481715902)")
             .execute(&mut *tx)
             .await?;
-        sqlx::query("CREATE TABLE IF NOT EXISTS hr_demo_streams (session_id TEXT PRIMARY KEY, generation BIGINT NOT NULL DEFAULT 0, sequence BIGINT NOT NULL DEFAULT 0)").execute(&mut *tx).await?;
-        sqlx::query("CREATE TABLE IF NOT EXISTS hr_demo_events (session_id TEXT NOT NULL REFERENCES hr_demo_streams(session_id), generation BIGINT NOT NULL, sequence BIGINT NOT NULL, event JSONB NOT NULL, PRIMARY KEY (session_id, generation, sequence))").execute(&mut *tx).await?;
-        sqlx::query("CREATE OR REPLACE FUNCTION hr_demo_prevent_event_mutation() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'demo events are append-only'; END $$").execute(&mut *tx).await?;
-        sqlx::query("DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'hr_demo_events_append_only' AND tgrelid = 'hr_demo_events'::regclass) THEN CREATE TRIGGER hr_demo_events_append_only BEFORE UPDATE OR DELETE ON hr_demo_events FOR EACH ROW EXECUTE FUNCTION hr_demo_prevent_event_mutation(); END IF; END $$").execute(&mut *tx).await?;
+        sqlx::query("CREATE TABLE IF NOT EXISTS hr_schema_migrations (version BIGINT PRIMARY KEY, applied_at TIMESTAMPTZ NOT NULL DEFAULT now())").execute(&mut *tx).await?;
+        let applied: bool = sqlx::query_scalar(
+            "SELECT EXISTS (SELECT 1 FROM hr_schema_migrations WHERE version = 1)",
+        )
+        .fetch_one(&mut *tx)
+        .await?;
+        if !applied {
+            sqlx::raw_sql(include_str!("../migrations/0001_demo_event_store.sql"))
+                .execute(&mut *tx)
+                .await?;
+            sqlx::query("INSERT INTO hr_schema_migrations (version) VALUES (1)")
+                .execute(&mut *tx)
+                .await?;
+        }
         tx.commit().await?;
         Ok(Self { pool })
     }
