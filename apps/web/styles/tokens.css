@@ -31,6 +31,7 @@ body { background: var(--color-canvas); color: var(--color-ink); font-size: 16px
 .studio { background: var(--color-canvas); color: var(--color-ink); }
 .studio-header, .verify-header, .landing-header { background: var(--color-chrome); color: var(--color-on-chrome); }
 a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible { outline: 3px solid var(--color-focus); outline-offset: 3px; }
+.button.button-coral { background: #ed845e; color: #151817; }
 @media (prefers-reduced-motion: reduce) {
   html { scroll-behavior: auto; }
 }
